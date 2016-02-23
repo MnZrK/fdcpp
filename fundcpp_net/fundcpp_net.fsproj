@@ -5,14 +5,13 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>67d72d3b-a87f-42df-a354-84c982eb57ad</ProjectGuid>
-    <OutputType>Exe</OutputType>
-    <RootNamespace>fundcpp_console</RootNamespace>
-    <AssemblyName>fundcpp_console</AssemblyName>
+    <ProjectGuid>d6faf7ad-641f-47e8-82a5-bc6f9b30af9e</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>fundcpp_net</RootNamespace>
+    <AssemblyName>fundcpp_net</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <TargetFSharpCoreVersion>4.3.1.0</TargetFSharpCoreVersion>
-    <Name>fundcpp_console</Name>
+    <Name>fundcpp_net</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -22,9 +21,7 @@
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Debug\fundcpp_console.XML</DocumentationFile>
-    <Prefer32Bit>true</Prefer32Bit>
+    <DocumentationFile>bin\Debug\fundcpp_net.XML</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -33,9 +30,7 @@
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Release\fundcpp_console.XML</DocumentationFile>
-    <Prefer32Bit>true</Prefer32Bit>
+    <DocumentationFile>bin\Release\fundcpp_net.XML</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -47,15 +42,8 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\fundcpp_net\fundcpp_net.fsproj">
-      <Name>fundcpp_net</Name>
-      <Project>{d6faf7ad-641f-47e8-82a5-bc6f9b30af9e}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-  </ItemGroup>  
-  <ItemGroup>
-    <Compile Include="fundcpp_console.fs" />
-    <None Include="App.config" />
+    <Compile Include="Main.fs" />
+    <None Include="Script.fsx" />
   </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
