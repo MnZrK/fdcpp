@@ -1,0 +1,6 @@
+/.fake
+/build
+bin
+obj
+/packages
+/.paket/paket.targets
