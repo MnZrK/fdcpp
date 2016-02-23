@@ -3,3 +3,13 @@
 ## About
 
 DC++ client written in F#. For now the UI is only console, intented to make HTML/JS ui, probably with Aurelia. 
+
+## Build
+
+    Run build.cmd
+    
+## Run
+
+After building,
+
+    Run build/fundcpp_console.exe
