@@ -54,7 +54,7 @@
     </ProjectReference>
   </ItemGroup>  
   <ItemGroup>
-    <Compile Include="fundcpp_console.fs" />
+    <Compile Include="Main.fs" />
     <None Include="App.config" />
   </ItemGroup>
   <PropertyGroup>
