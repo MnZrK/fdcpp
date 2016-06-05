@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -7,12 +7,12 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>67d72d3b-a87f-42df-a354-84c982eb57ad</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>fundcpp_console</RootNamespace>
-    <AssemblyName>fundcpp_console</AssemblyName>
+    <RootNamespace>FDCConsoleUI</RootNamespace>
+    <AssemblyName>FDCConsoleUI</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <TargetFSharpCoreVersion>4.3.1.0</TargetFSharpCoreVersion>
-    <Name>fundcpp_console</Name>
+    <Name>FDCConsoleUI</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -23,7 +23,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Debug\fundcpp_console.XML</DocumentationFile>
+    <DocumentationFile>bin\Debug\FDCConsoleUI.XML</DocumentationFile>
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
@@ -34,7 +34,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Release\fundcpp_console.XML</DocumentationFile>
+    <DocumentationFile>bin\Release\FDCConsoleUI.XML</DocumentationFile>
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
@@ -47,12 +47,17 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\fundcpp_net\fundcpp_net.fsproj">
-      <Name>fundcpp_net</Name>
+    <ProjectReference Include="..\FDCNet\FDCNet.fsproj">
+      <Name>FDCNet</Name>
       <Project>{d6faf7ad-641f-47e8-82a5-bc6f9b30af9e}</Project>
       <Private>True</Private>
     </ProjectReference>
-  </ItemGroup>  
+    <ProjectReference Include="..\FDCLogger\FDCLogger.fsproj">
+      <Name>FDCLogger</Name>
+      <Project>{bb095df8-6532-4c79-9ed2-f7dfa1f6229a}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="Main.fs" />
     <None Include="App.config" />

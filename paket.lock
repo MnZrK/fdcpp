@@ -1,4 +1,9 @@
 NUGET
   remote: https://www.nuget.org/api/v2
   specs:
-    FAKE (4.20.0)
+    FAKE (4.28)
+    NLog (4.3.4)
+    NLog.Config (4.3.4)
+      NLog (>= 4.3.4)
+      NLog.Schema (>= 4.3.4)
+    NLog.Schema (4.3.4)

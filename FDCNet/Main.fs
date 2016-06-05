@@ -1,4 +1,4 @@
-namespace fundcpp_net
+namespace FDCNet
 
 module Main =
 

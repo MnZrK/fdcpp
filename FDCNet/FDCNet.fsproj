@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -7,11 +7,11 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>d6faf7ad-641f-47e8-82a5-bc6f9b30af9e</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>fundcpp_net</RootNamespace>
-    <AssemblyName>fundcpp_net</AssemblyName>
+    <RootNamespace>FDCNet</RootNamespace>
+    <AssemblyName>FDCNet</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.3.1.0</TargetFSharpCoreVersion>
-    <Name>fundcpp_net</Name>
+    <Name>FDCNet</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -21,7 +21,7 @@
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Debug\fundcpp_net.XML</DocumentationFile>
+    <DocumentationFile>bin\Debug\FDCNet.XML</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -30,7 +30,7 @@
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Release\fundcpp_net.XML</DocumentationFile>
+    <DocumentationFile>bin\Release\FDCNet.XML</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -42,6 +42,13 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Numerics" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FDCLogger\FDCLogger.fsproj">
+      <Name>FDCLogger</Name>
+      <Project>{bb095df8-6532-4c79-9ed2-f7dfa1f6229a}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>  
   <ItemGroup>
     <Compile Include="Tcp.fs" />
     <Compile Include="Main.fs" />
