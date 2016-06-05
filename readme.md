@@ -16,4 +16,10 @@ Note that the build is managed using FAKE, so .sln file is dummy. You are free t
 
 After building,
 
-    Run build/fundcpp_console.exe
+    Run build/FDCConsoleUI.exe
+
+## Run Tests
+
+After building,
+    Run build.cmd RunTests
+    
