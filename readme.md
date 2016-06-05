@@ -2,7 +2,7 @@
 
 ## About
 
-DC++ client written in F#. For now the UI is only console, intented to make HTML/JS ui, probably with Aurelia. 
+DC++ client written in F#. For now the UI is only console, intended to make HTML/JS ui, probably with Aurelia. 
 
 ## Build
 

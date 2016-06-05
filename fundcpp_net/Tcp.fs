@@ -1,7 +1,5 @@
 namespace fundcpp_net
 
-namespace fundcpp_net
-
 module Tcp =
     open System
     open System.IO
