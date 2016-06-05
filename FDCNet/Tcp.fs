@@ -30,14 +30,14 @@ module Tcp =
             else
                 return! asyncReadingLoop (Array.append message bytes) stream 
         }
-
+        
         let cts = new CancellationTokenSource()
         Async.Start(asyncReadingLoop Array.empty stream, cancellationToken = cts.Token)
         let disposable = { new IDisposable with member x.Dispose() = logger.Info "Disposing..."; cts.Cancel(); client.Close() } // TODO check if `Close` is happenning after all tasks are cancelled
-        
+         
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec asyncWritingLoop() = async {
-                let! (msg: byte[]) = inbox.Receive()
+                let! msg = inbox.Receive()
                 
                 logger.Trace "Sending response..."
                 do! stream.WriteAsync(msg, 0, Array.length msg, cts.Token) |> Async.AwaitIAsyncResult |> Async.Ignore
