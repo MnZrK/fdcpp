@@ -9,6 +9,47 @@ module Tcp =
 
     open FDCLogger
 
+    /// return disposable object to close connection, event for received 
+    /// messages and post function to send replies. If connection is closed,
+    /// post function usage won't trigger any errors, but nothing will happen
+    let startClient (hostname: string) (port: int) =
+        let logger = new Logger()
+        let receivedCommand = new Event<byte[]>()
+    
+        let client = new System.Net.Sockets.TcpClient()
+        client.Connect(hostname, port)
+        logger.Info "Connected to %A %A" hostname port //TODO what if host is not available
+        let stream = client.GetStream()
+        
+        let rec asyncReadingLoop (message: byte[]) (stream : NetworkStream) = async {
+            let! bytes = stream.AsyncRead(1)
+            if (bytes.[0] = Convert.ToByte '|') then
+                logger.Trace "Triggering `ReceivedCommand` event"
+                receivedCommand.Trigger(message)
+                return! asyncReadingLoop Array.empty stream
+            else
+                return! asyncReadingLoop (Array.append message bytes) stream 
+        }
+
+        let cts = new CancellationTokenSource()
+        Async.Start(asyncReadingLoop Array.empty stream, cancellationToken = cts.Token)
+        let disposable = { new IDisposable with member x.Dispose() = logger.Info "Disposing..."; cts.Cancel(); client.Close() } // TODO check if `Close` is happenning after all tasks are cancelled
+        
+        let agent = MailboxProcessor.Start(fun inbox -> 
+            let rec asyncWritingLoop() = async {
+                let! (msg: byte[]) = inbox.Receive()
+                
+                logger.Trace "Sending response..."
+                do! stream.WriteAsync(msg, 0, Array.length msg, cts.Token) |> Async.AwaitIAsyncResult |> Async.Ignore
+                
+                return! asyncWritingLoop()
+            }
+            asyncWritingLoop()
+        , cts.Token)
+        
+        (disposable, receivedCommand.Publish, agent.Post)
+
+    // TODO Probably should remove it
     type Socket with
         member socket.AsyncAccept() = Async.FromBeginEnd(socket.BeginAccept, socket.EndAccept)
         member socket.AsyncReceive(buffer:byte[], ?offset, ?count) =
@@ -22,6 +63,8 @@ module Tcp =
             let beginSend(b,o,c,cb,s) = socket.BeginSend(b,o,c,SocketFlags.None,cb,s)
             Async.FromBeginEnd(buffer, offset, count, beginSend, socket.EndSend)
 
+    
+    /// My awesome server for testing purposes. Won't be used in actual program.
     type Server() =
         static let logger = new Logger()
     
@@ -33,7 +76,6 @@ module Tcp =
             let ipAddress = defaultArg ipAddress IPAddress.Any
             let port = defaultArg port 80
             let endpoint = IPEndPoint(ipAddress, port)
-            let cts = new CancellationTokenSource()
             let listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             listener.Bind(endpoint)
             listener.Listen(int SocketOptionName.MaxConnections)
@@ -59,5 +101,6 @@ module Tcp =
                     socket.Close()
                 return! loop() }
 
+            let cts = new CancellationTokenSource()
             Async.Start(loop(), cancellationToken = cts.Token)
             { new IDisposable with member x.Dispose() = cts.Cancel(); listener.Close() }

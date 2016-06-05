@@ -3,6 +3,10 @@ namespace FDCLogger
 module NLogLogger = 
     open System
 
+    /// All initial initialization for the logger is done in the 
+    /// static constructor, ie when the object of the class is 
+    /// created for the first time. Static constructors are thread-safe
+    /// so this logger is thread-safe as well.
     type Logger() = 
         // NLog configuration initialization
         static do 
