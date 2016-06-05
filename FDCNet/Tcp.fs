@@ -21,6 +21,7 @@ module Tcp =
         logger.Info "Connected to %A %A" hostname port //TODO what if host is not available
         let stream = client.GetStream()
         
+        // TODO use list or something instead of byte[]
         let rec asyncReadingLoop (message: byte[]) (stream : NetworkStream) = async {
             let! bytes = stream.AsyncRead(1)
             if (bytes.[0] = Convert.ToByte '|') then
