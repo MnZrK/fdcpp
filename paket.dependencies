@@ -3,3 +3,4 @@ nuget FAKE
 nuget NLog.Config
 nuget Xunit
 nuget xunit.runner.console
+nuget unquote

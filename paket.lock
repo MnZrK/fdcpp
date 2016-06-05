@@ -123,6 +123,7 @@ NUGET
       System.Threading.Tasks (>= 4.0) - framework: dnxcore50
     System.Threading.Tasks (4.0.10) - framework: dnxcore50
       System.Runtime (>= 4.0) - framework: dnxcore50
+    Unquote (3.1.1)
     xunit (2.1)
       xunit.assert (2.1)
       xunit.core (2.1)
