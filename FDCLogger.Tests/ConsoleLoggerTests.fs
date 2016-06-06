@@ -13,9 +13,3 @@ let ``Should construct logger without exceptions`` () =
 let ``Should log without exceptions`` () = 
     let logger = new Logger()
     logger.Trace "hello world %s" "another hello world"
-    
-// TODO remove it
-[<Fact>]
-let ``Should add 2 and 2`` () =
-    test <@ 2 + 2 = 4 @>
-    
