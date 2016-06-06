@@ -1,4 +1,4 @@
-module FDCLoggerNLogTests
+module FDCLogger.Tests.NLogLogger
 
 open Xunit
 open FDCLogger.NLogLogger
