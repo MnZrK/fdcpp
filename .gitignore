@@ -3,5 +3,7 @@
 bin
 obj
 /packages
-/.paket/paket.targets
 /deploy
+/.paket/paket.targets
+/.paket/paket.exe
+!/.paket/paket.bootstrapper.exe
