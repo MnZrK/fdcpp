@@ -9,6 +9,7 @@ let getBytes (str: string) = System.Text.Encoding.ASCII.GetBytes(str)
 
 [<EntryPoint>]
 let main argv =
+    // let host = "p2p.academ.org"
     let host = "localhost"
     let port = 411
 
@@ -53,19 +54,41 @@ let main argv =
         let readDcppMessageAsync () = Async.AwaitEvent(dcppEvent)
         
         async {
+            // lock message
             let! dcppMsg = readDcppMessageAsync()
                        
-            let hello = 
+            let lock = 
                 match dcppMsg with
-                | Dcpp.LockMessage hello ->
-                    logger.Info "got lock %s" hello.lock
-                    logger.Info "got pk %s" hello.pk
-                    hello
+                | Dcpp.LockMessage lock ->
+                    logger.Info "Got lock %s" lock.lock
+                    logger.Info "Got pk %s" lock.pk
+                    lock
                 | _ -> failwith "Could not parse lock message"
+
+            // authorization
+            let nick = "MnZrKk"
+            let authRequest = Array.concat [getBytes "$Key "; Dcpp.convertLockToKey <| getBytes lock.lock; getBytes ("|$ValidateNick "+nick+"|") ]
+            rawWriteMsg authRequest
             
-            let response = Array.concat [getBytes "$Key "; Dcpp.convertLockToKey <| getBytes hello.lock; getBytes "|$ValidateNick MnZrKk|" ]
-             
-            rawWriteMsg response
+            let! authResponse = readDcppMessageAsync()
+            
+            let authMsg =
+                match authResponse with
+                | Dcpp.AuthMessage authMsg ->
+                    logger.Info "Got auth message %A" authMsg
+                    authMsg
+                | _ -> failwith "Could not parse auth message"
+ 
+            match authMsg with
+            | Dcpp.BadPass -> failwith "Bad password"
+            | Dcpp.GetPass -> failwith "Password is not supported"
+            | Dcpp.ValidateDenied -> failwith "Could not login, validate denied"
+            | Dcpp.Hello n ->
+                if n <> nick then
+                    logger.Warn "Nick returned from server does not match our actual nick"
+                logger.Info "Logged in"
+ 
+            ()
         } |> Async.RunSynchronously
         
         Thread.Sleep(10000)

@@ -8,7 +8,7 @@ open FDCNet.Dcpp
 module LockMessageTests = 
 
     [<Fact>]
-    let ``Should parse correct hello message`` () =
+    let ``Should parse correct lock message`` () =
         let message = "$Lock EXTENDEDPROTOCOLRxXB?79Tmrg]UXayOU7LYkSIq2Awg6 Pk=PtokaX"
             
         let parsed = 
@@ -19,7 +19,7 @@ module LockMessageTests =
         test <@ parsed = true @>
         
     [<Fact>]
-    let ``Should extract correct values from correct hello message`` () =
+    let ``Should extract correct values from correct lock message`` () =
         let message = "$Lock EXTENDEDPROTOCOLRxXB?79Tmrg]UXayOU7LYkSIq2Awg6 Pk=PtokaX"
         let expectedLockMessage = {
             lock = "EXTENDEDPROTOCOLRxXB?79Tmrg]UXayOU7LYkSIq2Awg6"
@@ -34,7 +34,7 @@ module LockMessageTests =
         test <@ lockMessage = expectedLockMessage @>
         
     [<Fact>]
-    let ``Should extract correct values from correct hello message with DCN replacements`` () =
+    let ``Should extract correct values from correct lock message with DCN replacements`` () =
         let message = "$Lock EXTENDEDPROTOCOLRxXB?79Tm/%DCN124%/g]UXayOU7LYkSIq2Awg6 Pk=PtokaX"
         let expectedLockMessage = {
             lock = "EXTENDEDPROTOCOLRxXB?79Tm|g]UXayOU7LYkSIq2Awg6"
@@ -49,7 +49,7 @@ module LockMessageTests =
         test <@ lockMessage = expectedLockMessage @>
         
     [<Fact>]
-    let ``Should not parse incorrect hello message`` () =
+    let ``Should not parse incorrect lock message`` () =
         let message = "$Lockk EXTENDEDPROTOCOLRxXB?79Tmrg]UXayOU7LYkSIq2Awg6 Pka=PtokaX"
             
         let parsed = 
@@ -58,6 +58,144 @@ module LockMessageTests =
             | _ -> false
             
         test <@ parsed = false @>
+
+module AuthMessageTests = 
+
+    [<Fact>]
+    let ``Should parse correct ValidateDenide message`` () =
+        let message = "$ValidateDenide"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = true @>
+        
+    [<Fact>]
+    let ``Should extract correct values from correct ValidateDenide message`` () =
+        let message = "$ValidateDenide"
+        let expectedAuthMessage = ValidateDenied
+            
+        let authMessage = 
+            match message with 
+            | AuthMessagePattern msg -> msg 
+            | _ -> failwith "failed"
+            
+        test <@ authMessage = expectedAuthMessage @>
+        
+    [<Fact>]
+    let ``Should not parse incorrect ValidateDenide message`` () =
+        let message = "$ValidateDenide1"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = false @>
+
+    [<Fact>]
+    let ``Should parse correct GetPass message`` () =
+        let message = "$GetPass"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = true @>
+        
+    [<Fact>]
+    let ``Should extract correct values from correct GetPass message`` () =
+        let message = "$GetPass"
+        let expectedAuthMessage = GetPass
+            
+        let authMessage = 
+            match message with 
+            | AuthMessagePattern msg -> msg 
+            | _ -> failwith "failed"
+            
+        test <@ authMessage = expectedAuthMessage @>
+        
+    [<Fact>]
+    let ``Should not parse incorrect GetPass message`` () =
+        let message = "$GetPass1"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = false @>
+        
+    [<Fact>]
+    let ``Should parse correct BadPass message`` () =
+        let message = "$BadPass"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = true @>
+        
+    [<Fact>]
+    let ``Should extract correct values from correct BadPass message`` () =
+        let message = "$BadPass"
+        let expectedAuthMessage = BadPass
+            
+        let authMessage = 
+            match message with 
+            | AuthMessagePattern msg -> msg 
+            | _ -> failwith "failed"
+            
+        test <@ authMessage = expectedAuthMessage @>
+        
+    [<Fact>]
+    let ``Should not parse incorrect BadPass message`` () =
+        let message = "$BadPass1"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = false @>        
+        
+    [<Fact>]
+    let ``Should parse correct Hello message`` () =
+        let message = "$Hello MnZrKk"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = true @>
+        
+    [<Fact>]
+    let ``Should extract correct values from correct Hello message`` () =
+        let message = "$Hello MnZrKk"
+        let expectedAuthMessage = Hello "MnZrKk"
+            
+        let authMessage = 
+            match message with 
+            | AuthMessagePattern msg -> msg 
+            | _ -> failwith "failed"
+            
+        test <@ authMessage = expectedAuthMessage @>
+        
+    [<Fact>]
+    let ``Should not parse incorrect Hello message`` () =
+        let message = "$Hello1 Mnzasdfasdf"
+            
+        let parsed = 
+            match message with 
+            | AuthMessagePattern msg -> true
+            | _ -> false
+            
+        test <@ parsed = false @>        
 
 module ConvertLock2KeyTests =
 

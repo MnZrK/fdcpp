@@ -25,17 +25,39 @@ type LockMessage = {
     lock: string // ASCII string 
     pk: string // ASCII string
 }
+type AuthMessage = 
+| ValidateDenied
+| GetPass
+//| LoggedIn only for Op users 
+| BadPass
+| Hello of string // nick
 
 type Message =
 | LockMessage of LockMessage 
+| AuthMessage of AuthMessage
 
 let (|LockMessagePattern|_|) input =
-    let m = Regex.Match(input,"\$Lock (.*) Pk=(.*)")
+    let m = Regex.Match(input,"^\$Lock (.*) Pk=(.*)$")
     if (m.Success) then Some { lock = DCNtoString m.Groups.[1].Value; pk = DCNtoString m.Groups.[2].Value } else None
+
+let (|AuthMessagePattern|_|) input =
+    let applyMatch str (r, f) =
+        let m = Regex.Match(str, r)
+        if (m.Success) then Some <| f m
+        else None
+
+    let matches = [ 
+        ("^\$ValidateDenide$", fun _ -> ValidateDenied);
+        ("^\$GetPass$", fun _ -> GetPass);
+        ("^\$BadPass$", fun _ -> BadPass);
+        ("^\$Hello (.*)$", fun (m: Match) -> Hello m.Groups.[1].Value);
+    ]
+    matches |> Seq.tryPick (applyMatch input)
 
 let parseMessage =
     function
-    | LockMessagePattern msg -> Some <| LockMessage msg  
+    | LockMessagePattern msg -> Some <| LockMessage msg 
+    | AuthMessagePattern msg -> Some <| AuthMessage msg 
     | _ -> None
     
 // validating
@@ -50,6 +72,7 @@ let validateMessage =
             Success
         else
             Fail "lock is too short"
+    | AuthMessage _ -> Success
     
 /// length of lock must be at least 2. It is ensured by `validateMessage`
 let convertLockToKey (lock: byte[]): byte[] =
