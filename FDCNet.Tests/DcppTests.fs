@@ -13,7 +13,7 @@ module LockMessageTests =
             
         let parsed = 
             match message with 
-            | LockMessagePattern msg -> true
+            | LockMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = true @>
@@ -28,7 +28,7 @@ module LockMessageTests =
             
         let lockMessage = 
             match message with 
-            | LockMessagePattern msg -> msg 
+            | LockMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ lockMessage = expectedLockMessage @>
@@ -43,7 +43,7 @@ module LockMessageTests =
             
         let lockMessage = 
             match message with 
-            | LockMessagePattern msg -> msg 
+            | LockMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ lockMessage = expectedLockMessage @>
@@ -54,7 +54,7 @@ module LockMessageTests =
             
         let parsed = 
             match message with 
-            | LockMessagePattern msg -> true
+            | LockMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = false @>
@@ -67,7 +67,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = true @>
@@ -79,7 +79,7 @@ module AuthMessageTests =
             
         let authMessage = 
             match message with 
-            | AuthMessagePattern msg -> msg 
+            | AuthMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ authMessage = expectedAuthMessage @>
@@ -90,7 +90,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = false @>
@@ -101,7 +101,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = true @>
@@ -113,7 +113,7 @@ module AuthMessageTests =
             
         let authMessage = 
             match message with 
-            | AuthMessagePattern msg -> msg 
+            | AuthMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ authMessage = expectedAuthMessage @>
@@ -124,7 +124,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = false @>
@@ -135,7 +135,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = true @>
@@ -147,7 +147,7 @@ module AuthMessageTests =
             
         let authMessage = 
             match message with 
-            | AuthMessagePattern msg -> msg 
+            | AuthMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ authMessage = expectedAuthMessage @>
@@ -158,7 +158,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = false @>        
@@ -169,7 +169,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = true @>
@@ -181,7 +181,7 @@ module AuthMessageTests =
             
         let authMessage = 
             match message with 
-            | AuthMessagePattern msg -> msg 
+            | AuthMessageDataPattern msg -> msg 
             | _ -> failwith "failed"
             
         test <@ authMessage = expectedAuthMessage @>
@@ -192,7 +192,7 @@ module AuthMessageTests =
             
         let parsed = 
             match message with 
-            | AuthMessagePattern msg -> true
+            | AuthMessageDataPattern msg -> true
             | _ -> false
             
         test <@ parsed = false @>        

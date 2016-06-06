@@ -21,11 +21,11 @@ let DCNtoString (str: string) =
         .Replace("/%DCN124%/", System.Text.Encoding.ASCII.GetString([|124uy|]))
         .Replace("/%DCN126%/", System.Text.Encoding.ASCII.GetString([|126uy|]))
         
-type LockMessage = { 
+type LockMessageData = { 
     lock: string // ASCII string 
     pk: string // ASCII string
 }
-type AuthMessage = 
+type AuthMessageData = 
 | ValidateDenied
 | GetPass
 //| LoggedIn only for Op users 
@@ -33,14 +33,14 @@ type AuthMessage =
 | Hello of string // nick
 
 type Message =
-| LockMessage of LockMessage 
-| AuthMessage of AuthMessage
+| LockMessage of LockMessageData 
+| AuthMessage of AuthMessageData
 
-let (|LockMessagePattern|_|) input =
+let (|LockMessageDataPattern|_|) input =
     let m = Regex.Match(input,"^\$Lock (.*) Pk=(.*)$")
     if (m.Success) then Some { lock = DCNtoString m.Groups.[1].Value; pk = DCNtoString m.Groups.[2].Value } else None
 
-let (|AuthMessagePattern|_|) input =
+let (|AuthMessageDataPattern|_|) input =
     let applyMatch str (r, f) =
         let m = Regex.Match(str, r)
         if (m.Success) then Some <| f m
@@ -56,8 +56,8 @@ let (|AuthMessagePattern|_|) input =
 
 let parseMessage =
     function
-    | LockMessagePattern msg -> Some <| LockMessage msg 
-    | AuthMessagePattern msg -> Some <| AuthMessage msg 
+    | LockMessageDataPattern msg -> Some <| LockMessage msg 
+    | AuthMessageDataPattern msg -> Some <| AuthMessage msg 
     | _ -> None
     
 // validating
