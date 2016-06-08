@@ -2,6 +2,8 @@ module FDCConcoleUI
 
 open System
 open System.Threading
+
+open FDCUtil.Main
 open FDCLogger
 open FDCNet
 
@@ -44,10 +46,10 @@ let main argv =
             )
         let dcppEvent = dcppUnvalidatedEvent |> Event.choose (fun message -> 
             match Dcpp.Message.validate message with
-            | Dcpp.Utilities.Failure error -> 
+            | Failure error -> 
                 logger.Error "Received message is not valid: %s" error
                 None
-            | Dcpp.Utilities.Success validated ->
+            | Success validated ->
                 validated |> Some
             )
             

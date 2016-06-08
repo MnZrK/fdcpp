@@ -3,8 +3,8 @@ module FDCNet.Tests.Dcpp
 open Xunit
 open Swensen.Unquote
 
+open FDCUtil.Main
 open FDCNet.Dcpp
-open FDCNet.Dcpp.Utilities
 
 module ``MessageLock Tests`` = 
     open Message.Lock

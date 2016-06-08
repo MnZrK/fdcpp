@@ -1,13 +1,13 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <Name>FDCNet.Tests</Name>
-    <AssemblyName>FDCNet.Tests</AssemblyName>
-    <RootNamespace>FDCNet.Tests</RootNamespace>
+    <Name>FDCDomain.Tests</Name>
+    <AssemblyName>FDCDomain.Tests</AssemblyName>
+    <RootNamespace>FDCDomain.Tests</RootNamespace>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>17e20abd-db51-4b0b-93e1-fcbdfb2d0cdf</ProjectGuid>
+    <ProjectGuid>c6f16a61-0fba-48b6-9537-2697f4f26c62</ProjectGuid>
     <ProjectType />
     <OutputType>Library</OutputType>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
@@ -50,20 +50,14 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="UtilTests.fs" />
-    <Compile Include="DcppTests.fs" />
+    <Compile Include="ServerTests.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FDCNet\FDCNet.fsproj">
-      <Name>FDCNet</Name>
-      <Project>{d6faf7ad-641f-47e8-82a5-bc6f9b30af9e}</Project>
+    <ProjectReference Include="..\FDCDomain\FDCDomain.fsproj">
+      <Name>FDCDomain</Name>
+      <Project>{e237e27e-9334-4b28-9155-2bfe8618fc1b}</Project>
       <Private>True</Private>
     </ProjectReference>
-    <ProjectReference Include="..\FDCUtil\FDCUtil.fsproj">
-      <Name>FDCUtil</Name>
-      <Project>{ffc051a3-eb26-4394-beb7-c2d840148ea0}</Project>
-      <Private>True</Private>
-    </ProjectReference>    
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <Choose>

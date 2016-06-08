@@ -9,13 +9,16 @@ open System.Threading
 open FDCLogger
 
 type Client = {
+    /// function to close connection
     dispose: unit -> unit
+    /// event for received messages
     receivedEvent: IEvent<byte[]>
+    /// Write function to send replies. If connection is already closed, calling
+    /// this function won't trigger any errors, but nothing will happen as well.
     write: byte[] -> unit
-} 
-/// return disposable object to close connection, event for received 
-/// messages and post function to send replies. If connection is closed,
-/// post function usage won't trigger any errors, but nothing will happen
+}
+
+/// It assumes that the message is received when `checkMsgReceived` argument returns true.
 let startClient (checkMsgReceived: byte[] * byte -> bool) (hostname: string) (port: int) =
     let logger = new Logger()
     let receivedCommand = new Event<byte[]>()

@@ -1,75 +1,10 @@
 module FDCNet.Dcpp
 
 open System
-open System.Text.RegularExpressions
 
-module Utilities =
-    let getBytes (str: string) = System.Text.Encoding.ASCII.GetBytes(str)
-    let getString bytes = System.Text.Encoding.ASCII.GetString(bytes)
-
-    let byteToDCN = 
-        function
-        | 0uy -> getBytes "/%DCN000%/"
-        | 5uy -> getBytes "/%DCN005%/"
-        | 36uy -> getBytes "/%DCN036%/"
-        | 96uy -> getBytes "/%DCN096%/"
-        | 124uy -> getBytes "/%DCN124%/"
-        | 126uy -> getBytes "/%DCN126%/"
-        | b -> [|b|]
-    let DCNtoString (str: string) = 
-        str.Replace("/%DCN000%/", getString [|0uy|])
-            .Replace("/%DCN005%/", getString [|5uy|])
-            .Replace("/%DCN036%/", getString [|36uy|])
-            .Replace("/%DCN096%/", getString [|96uy|])
-            .Replace("/%DCN124%/", getString [|124uy|])
-            .Replace("/%DCN126%/", getString [|126uy|])
-
-    // TODO move to more generic Utilities module
-    let (|Regex|_|) pattern input =
-        let m = Regex.Match(input, pattern)
-        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-        else None
-
-    let applyRegexMatch str (r, f) =
-        match str with
-        | Regex r vars -> Some <| f vars
-        | _ -> None
-
-    type Result<'a, 'b> = 
-    | Success of 'a
-    | Failure of 'b
-    module Result = 
-        let onSuccess f =
-            function
-            | Success x -> f x |> Success
-            | Failure x -> Failure x
-        let onFailure f =
-            function
-            | Success x -> Success x
-            | Failure x -> f x |> Failure
-
-        let bindSuccess m f = 
-            match m with
-            | Success x -> f x
-            | Failure x -> Failure x
-        let bindFailure m f = 
-            match m with
-            | Success x -> Success x
-            | Failure x -> f x
-
-        type SuccessBuilder() =
-            member this.Bind(m, f) = bindSuccess m f
-            member this.Return(x) = Success x
-            member this.ReturnFrom(x) = x
-        let successWorkflow = new SuccessBuilder()
-
-        type FailureBuilder() =
-            member this.Bind(m, f) = bindFailure m f
-            member this.Return(x) = Failure x
-            member this.ReturnFrom(x) = x
-        let failureWorkflow = new FailureBuilder()
-
-open Utilities
+open FDCUtil.Main
+open FDCUtil.Regex
+open FDCNet.Util
 
 module Message =
     module Lock =
@@ -103,7 +38,7 @@ module Message =
         let parse = (|RegexMsg|_|)
 
         let validate msg = 
-            LockData.create msg.lock'NotValidated |> Result.onSuccess (fun lockData -> 
+            LockData.create msg.lock'NotValidated |> Result.mapSuccess (fun lockData -> 
             {
                 lock = lockData
                 pk = msg.pk'NotValidated
@@ -202,10 +137,10 @@ module Message =
 
     let validate msg =
         match msg with
-        | LockT'NotValidated msg           -> Lock.validate msg           |> Result.onSuccess LockT
-        | ValidateDeniedT'NotValidated msg -> ValidateDenied.validate msg |> Result.onSuccess ValidateDeniedT
-        | GetPassT'NotValidated msg        -> GetPass.validate msg        |> Result.onSuccess GetPassT
-        | BadPassT'NotValidated msg        -> BadPass.validate msg        |> Result.onSuccess BadPassT
-        | HelloT'NotValidated msg          -> Hello.validate msg          |> Result.onSuccess HelloT
+        | LockT'NotValidated msg           -> Lock.validate msg           |> Result.mapSuccess LockT
+        | ValidateDeniedT'NotValidated msg -> ValidateDenied.validate msg |> Result.mapSuccess ValidateDeniedT
+        | GetPassT'NotValidated msg        -> GetPass.validate msg        |> Result.mapSuccess GetPassT
+        | BadPassT'NotValidated msg        -> BadPass.validate msg        |> Result.mapSuccess BadPassT
+        | HelloT'NotValidated msg          -> Hello.validate msg          |> Result.mapSuccess HelloT
 
 let startClient = Tcp.startClient (fun (msg, byte) -> byte = Convert.ToByte '|')
