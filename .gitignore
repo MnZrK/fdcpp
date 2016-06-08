@@ -7,3 +7,4 @@ obj
 /.paket/paket.targets
 /.paket/paket.exe
 !/.paket/paket.bootstrapper.exe
+test.fsx
