@@ -12,7 +12,6 @@ let getBytes (str: string) = System.Text.Encoding.ASCII.GetBytes(str)
 [<EntryPoint>]
 let main argv =
     // let host = "p2p.academ.org"
-        
     let host = "localhost"
     let port = 411
 
