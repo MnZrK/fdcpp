@@ -19,7 +19,7 @@ let main argv =
     logger.Info "FDCConsoleUI is starting! args: %A" argv
     
     logger.Info "Starting Tcp client..."
-    let client = Dcpp.startClient host port
+    let client = Dcpp.startClientAsync host port |> Async.RunSynchronously
 
     try
         let rawEvent = client.receivedEvent

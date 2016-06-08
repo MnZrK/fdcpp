@@ -19,43 +19,45 @@ type Client = {
 }
 
 /// It assumes that the message is received when `checkMsgReceived` argument returns true.
-let startClient (checkMsgReceived: byte[] * byte -> bool) (hostname: string) (port: int) =
+let startClientAsync (checkMsgReceived: byte[] * byte -> bool) (hostname: string) (port: int) =
     let logger = new Logger()
     let receivedCommand = new Event<byte[]>()
 
     let client = new System.Net.Sockets.TcpClient()
-    client.Connect(hostname, port)
-    logger.Info "Connected to %A %A" hostname port //TODO what if host is not available
-    let stream = client.GetStream()
-    
-    // TODO use list or something instead of byte[]
-    let rec asyncReadingLoop (message: byte[]) (stream : NetworkStream) = async {
-        let! bytes = stream.AsyncRead(1)
-        if checkMsgReceived(message, bytes.[0]) then
-            logger.Trace "Triggering `ReceivedCommand` event"
-            receivedCommand.Trigger(message)
-            return! asyncReadingLoop Array.empty stream
-        else
-            return! asyncReadingLoop (Array.append message bytes) stream 
-    }
-    
-    let cts = new CancellationTokenSource()
-    Async.Start(asyncReadingLoop Array.empty stream, cancellationToken = cts.Token)
-    let dispose() =  
-        logger.Info "Disposing..." 
-        cts.Cancel() 
-        client.Close() // TODO check if `Close` is happenning after all tasks related to cts are cancelled 
+    async {
+        do! client.ConnectAsync(hostname, port) |> Async.AwaitIAsyncResult |> Async.Ignore
+        logger.Info "Connected to %A %A" hostname port //TODO what if host is not available
+        let stream = client.GetStream()
         
-    let agent = MailboxProcessor.Start(fun inbox -> 
-        let rec asyncWritingLoop() = async {
-            let! msg = inbox.Receive()
-            
-            logger.Trace "Sending response..."
-            do! stream.WriteAsync(msg, 0, Array.length msg, cts.Token) |> Async.AwaitIAsyncResult |> Async.Ignore
-            
-            return! asyncWritingLoop()
+        // TODO use list or something instead of byte[]
+        let rec asyncReadingLoop (message: byte[]) (stream : NetworkStream) = async {
+            let! bytes = stream.AsyncRead(1)
+            if checkMsgReceived(message, bytes.[0]) then
+                logger.Trace "Triggering `ReceivedCommand` event"
+                receivedCommand.Trigger(message)
+                return! asyncReadingLoop Array.empty stream
+            else
+                return! asyncReadingLoop (Array.append message bytes) stream 
         }
-        asyncWritingLoop()
-    , cts.Token)
-    
-    {dispose = dispose; receivedEvent = receivedCommand.Publish; write = agent.Post}
+        
+        let cts = new CancellationTokenSource()
+        Async.Start(asyncReadingLoop Array.empty stream, cancellationToken = cts.Token)
+        let dispose() =  
+            logger.Info "Disposing..." 
+            cts.Cancel() 
+            client.Close() // TODO check if `Close` is happenning after all tasks related to cts are cancelled 
+            
+        let agent = MailboxProcessor.Start(fun inbox -> 
+            let rec asyncWritingLoop() = async {
+                let! msg = inbox.Receive()
+                
+                logger.Trace "Sending response..."
+                do! stream.WriteAsync(msg, 0, Array.length msg, cts.Token) |> Async.AwaitIAsyncResult |> Async.Ignore
+                
+                return! asyncWritingLoop()
+            }
+            asyncWritingLoop()
+        , cts.Token)
+        
+        return {dispose = dispose; receivedEvent = receivedCommand.Publish; write = agent.Post}
+    }

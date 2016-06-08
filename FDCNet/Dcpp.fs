@@ -143,4 +143,4 @@ module Message =
         | BadPassT'NotValidated msg        -> BadPass.validate msg        |> Result.mapSuccess BadPassT
         | HelloT'NotValidated msg          -> Hello.validate msg          |> Result.mapSuccess HelloT
 
-let startClient = Tcp.startClient (fun (msg, byte) -> byte = Convert.ToByte '|')
+let startClientAsync = Tcp.startClientAsync (fun (msg, byte) -> byte = Convert.ToByte '|')
