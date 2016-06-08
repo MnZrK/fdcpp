@@ -34,7 +34,7 @@ let main argv =
         event |> Event.add (fun message -> logger.Trace "Got message: %s" message)
         
         let dcppUnvalidatedEvent = event |> Event.choose (fun message -> 
-            match Dcpp.parseMessage message with
+            match Dcpp.Message.parse message with
             | None -> 
                 logger.Warn "Could not parse message: %s" message
                 None
@@ -43,52 +43,45 @@ let main argv =
                 parsedMessage |> Some
             )
         let dcppEvent = dcppUnvalidatedEvent |> Event.choose (fun message -> 
-            match Dcpp.validateMessage message with
-            | Dcpp.Fail error -> 
-                logger.Error "Received message is not validated: %s" error
+            match Dcpp.Message.validate message with
+            | Dcpp.Utilities.Failure error -> 
+                logger.Error "Received message is not valid: %s" error
                 None
-            | Dcpp.Success ->
-                Some message
+            | Dcpp.Utilities.Success validated ->
+                validated |> Some
             )
             
         let readDcppMessageAsync () = Async.AwaitEvent(dcppEvent)
         
         async {
             // lock message
-            let! dcppMsg = readDcppMessageAsync()
+            let! lockResponse = readDcppMessageAsync()
                        
-            let lock = 
-                match dcppMsg with
-                | Dcpp.LockMessage lock ->
-                    logger.Info "Got lock %s" lock.lock
-                    logger.Info "Got pk %s" lock.pk
-                    lock
+            let lockMsg = 
+                match lockResponse with
+                | Dcpp.Message.LockT lockMsg ->
+                    logger.Info "Got lock %A" lockMsg.lock
+                    logger.Info "Got pk %s" lockMsg.pk
+                    lockMsg
                 | _ -> failwith "Could not parse lock message"
 
             // authorization
             let nick = "MnZrKk"
-            let authRequest = Array.concat [getBytes "$Key "; Dcpp.convertLockToKey <| getBytes lock.lock; getBytes ("|$ValidateNick "+nick+"|") ]
+            let authRequest = Array.concat [getBytes "$Key "; Dcpp.Message.Lock.calculateKey lockMsg.lock; getBytes ("|$ValidateNick "+nick+"|") ]
             rawWriteMsg authRequest
             
             let! authResponse = readDcppMessageAsync()
             
-            let authMsg =
-                match authResponse with
-                | Dcpp.AuthMessage authMsg ->
-                    logger.Info "Got auth message %A" authMsg
-                    authMsg
-                | _ -> failwith "Could not parse auth message"
- 
-            match authMsg with
-            | Dcpp.BadPass -> failwith "Bad password"
-            | Dcpp.GetPass -> failwith "Password is not supported"
-            | Dcpp.ValidateDenied -> failwith "Could not login, validate denied"
-            | Dcpp.Hello n ->
-                if n <> nick then
+            match authResponse with
+            | Dcpp.Message.BadPassT _ -> failwith "Bad password"
+            | Dcpp.Message.GetPassT _ -> failwith "Password is not supported"
+            | Dcpp.Message.ValidateDeniedT _ -> failwith "Could not login, validate denied"
+            | Dcpp.Message.HelloT msg ->
+                if msg.nick <> Dcpp.Message.Hello.NickData nick then
                     logger.Warn "Nick returned from server does not match our actual nick"
                 logger.Info "Logged in"
- 
-            ()
+            | _ -> failwith "Expected auth response" 
+                
         } |> Async.RunSynchronously
         
         Thread.Sleep(10000)
