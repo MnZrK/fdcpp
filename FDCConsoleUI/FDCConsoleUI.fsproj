@@ -62,6 +62,11 @@
       <Project>{ffc051a3-eb26-4394-beb7-c2d840148ea0}</Project>
       <Private>True</Private>
     </ProjectReference>    
+    <ProjectReference Include="..\FDCDomain\FDCDomain.fsproj">
+      <Name>FDCDomain</Name>
+      <Project>{e237e27e-9334-4b28-9155-2bfe8618fc1b}</Project>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Main.fs" />
