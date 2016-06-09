@@ -35,25 +35,25 @@ module Result =
     let failureWorkflow = new FailureBuilder()
 
 module Agent =
-    type Message<'a, 'b> = 
-    | Post of 'a
-    | PostAndReply of 'a * AsyncReplyChannel<'b * 'b>
-    | Fetch of AsyncReplyChannel<'b>
+    type Message<'action, 'state, 'c> = 
+    | Post of 'action
+    | PostAndReply of 'action * AsyncReplyChannel<'state * Result<'state, 'c>>
+    | Fetch of AsyncReplyChannel<'state>
     // | Die
 
-    type T<'a, 'b> = {
-        post: 'a -> unit
-        postAndReply: 'a -> ('b * 'b)
-        postAndReplyAsync: 'a -> Async<'b * 'b>
-        fetch: unit -> 'b
-        fetchAsync: unit -> Async<'b>
-        event: IEvent<'b * 'b>
+    type T<'action, 'state, 'c> = {
+        post: 'action -> unit
+        postAndReply: 'action -> ('state * Result<'state, 'c>)
+        postAndReplyAsync: 'action -> Async<'state * Result<'state, 'c>>
+        event: IEvent<'state * 'state>
+        fetch: unit -> 'state
+        fetchAsync: unit -> Async<'state>
     }
 
     // BUG cancelling ctstoken makes `fetch` and `*andReply*` methods to stuck infinitely
     // TODO make proper cancellation 
     let create state f =
-        let event = new Event<'b * 'b>()
+        let event = new Event<'state * 'state>()
 
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop accState = async {
@@ -61,14 +61,22 @@ module Agent =
                 
                 match agentMessage with
                 | Post x ->
-                    let accState' = f x accState
-                    event.Trigger((accState, accState'))
-                    return! loop accState'
+                    let fResult = f x accState
+                    match fResult with
+                    | Success accState' ->
+                        event.Trigger((accState, accState'))
+                        return! loop accState'
+                    | Failure _ ->
+                        return! loop accState
                 | PostAndReply (x, replyChannel) ->
-                    let accState' = f x accState
-                    replyChannel.Reply((accState, accState'))
-                    event.Trigger((accState, accState'))
-                    return! loop accState'
+                    let fResult = f x accState
+                    replyChannel.Reply((accState, fResult))
+                    match fResult with
+                    | Success accState' ->
+                        event.Trigger((accState, accState'))
+                        return! loop accState'
+                    | Failure _ ->
+                        return! loop accState
                 | Fetch replychannel ->
                     replychannel.Reply(accState)
                     return! loop accState

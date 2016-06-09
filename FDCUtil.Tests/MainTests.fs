@@ -57,7 +57,7 @@ module ``Result Tests`` =
 module ``Agent Tests`` =
     open System.Threading
 
-    let testF = (+)
+    let testF x y = x + y |> Success 
 
     [<Fact>]
     let ``Should create agent`` () =
@@ -100,8 +100,14 @@ module ``Agent Tests`` =
         let agent = Agent.create 0 testF
 
         let result = input |> List.map (fun x -> let _, y = agent.postAndReply x in y)
-
-        test <@ result = expected @>
+        
+        test <@ 
+                result |> List.choose (fun res -> 
+                    match res with
+                    | Success x -> Some x
+                    | Failure _ -> None 
+                ) = expected 
+            @>
 
     [<Fact>]
     let ``Should sum a list using agent postAndReplyAsync`` () =
@@ -120,7 +126,13 @@ module ``Agent Tests`` =
             ) 
         let result = asyncs |> List.map Async.RunSynchronously
 
-        test <@ result = expected @>
+        test <@ 
+                result |> List.choose (fun res -> 
+                    match res with
+                    | Success x -> Some x
+                    | Failure _ -> None 
+                ) = expected 
+            @>
 
     [<Fact>]
     let ``Should trigger events`` () =
