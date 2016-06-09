@@ -91,50 +91,6 @@ module ``MessageLock Tests`` =
 
         test <@ result = Failure "lock is too short" @>
 
-    // TODO move it when `calculateKey` is moved as well
-    module ``calculateKey Tests`` =
-
-        [<Fact>]
-        let ``Should calculate key (simplest case)`` () =
-            let expected = [|51uy; 48uy; 16uy; 112uy|]
-
-            let result = Result.successWorkflow {
-                let! lockData = LockData.create "1234"
-
-                return calculateKey lockData
-            }
-                
-            test <@ result = Success expected @>
-
-        [<Fact>]
-        let ``Should calculate key (with DCN replacement)`` () =
-            let expected = [|99uy; 48uy; 16uy; 112uy; 85uy; 33uy; 17uy; 48uy; 33uy; 113uy; 32uy; 117uy;
-            48uy; 48uy; 214uy; 198uy; 196uy; 47uy; 37uy; 68uy; 67uy; 78uy; 48uy; 48uy;
-            48uy; 37uy; 47uy; 17uy; 192uy; 192uy; 208uy; 47uy; 37uy; 68uy; 67uy; 78uy;
-            48uy; 48uy; 48uy; 37uy; 47uy; 47uy; 37uy; 68uy; 67uy; 78uy; 48uy; 48uy; 48uy;
-            37uy; 47uy; 53uy; 112uy; 80uy; 48uy; 16uy; 32uy|]
-
-            let result = Result.successWorkflow {
-                let! lockData = LockData.create "1234asbasdf121\0||mam```341231"
-
-                return calculateKey lockData
-            }
-            
-            test <@ result = Success expected @>
-
-        [<Fact>]
-        let ``Should calculate key (and match sample from FlyLink)`` () =
-            let parseHexKey (str: string) = str.Split [|' '|] |> Array.map (fun x -> System.Byte.Parse(x, System.Globalization.NumberStyles.AllowHexSpecifier))
-        
-            let expected = parseHexKey "11 d1 c0 11 b0 a0 10 10 41 20 d1 b1 b1 c0 c0 30 f1 13 53 d0 e6 d6 70 b0 d0 a2 10 93 80 02 a0 c0 95 44 10 d1 33 c1 62 b2 32 2f 25 44 43 4e 30 30 30 25 2f c5 f4 01 15"
-
-            let result = Result.successWorkflow {
-                let! lockData = LockData.create "EXTENDEDPROTOCOLSbWZ4Y^UXrsJBbhd=yxeVJlGdd8wg6"
-
-                return calculateKey lockData
-            }
-            
-            test <@ result = Success expected @>
 
 module ``MessageValidateDenied Tests`` = 
     open Message.ValidateDenied

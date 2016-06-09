@@ -53,7 +53,7 @@
   <ItemGroup>
     <Compile Include="Util.fs" />
     <Compile Include="Tcp.fs" />
-    <Compile Include="Dcpp.fs" />
+    <!--<Compile Include="Dcpp.fs" />-->
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FDCLogger\FDCLogger.fsproj">

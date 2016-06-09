@@ -50,8 +50,8 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="UtilTests.fs" />
-    <Compile Include="DcppTests.fs" />
+    <!--<Compile Include="UtilTests.fs" />-->
+    <!--<Compile Include="DcppTests.fs" />-->
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FDCNet\FDCNet.fsproj">
