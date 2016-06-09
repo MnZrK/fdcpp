@@ -58,27 +58,20 @@ module ``Agent Tests`` =
     open System.Threading
 
     let testF = (+)
-    let testFDelay x y =
-        Thread.Sleep 1000
-        x + y  
 
     [<Fact>]
     let ``Should create agent`` () =
-        let cts = new CancellationTokenSource()
-
-        let agent = Agent.create cts.Token 0 testF
+        let agent = Agent.create 0 testF
 
         test <@ true = true @>
 
     [<Fact>]
     let ``Should sum a list using agent post and fetch it`` () =
-        let cts = new CancellationTokenSource()
-
         let input = [10; 20; 30; 40; 50]
 
         let expected = List.sum input
 
-        let agent = Agent.create cts.Token 0 testF
+        let agent = Agent.create 0 testF
 
         input |> List.iter agent.post
         let result = agent.fetch()
@@ -87,13 +80,11 @@ module ``Agent Tests`` =
 
     [<Fact>]
     let ``Should sum a list using agent post and fetchAsync it`` () =
-        let cts = new CancellationTokenSource()
-
         let input = [10; 20; 30; 40; 50]
 
         let expected = List.sum input
 
-        let agent = Agent.create cts.Token 0 testF
+        let agent = Agent.create 0 testF
 
         input |> List.iter agent.post
         let result = agent.fetchAsync() |> Async.RunSynchronously
@@ -102,13 +93,11 @@ module ``Agent Tests`` =
 
     [<Fact>]
     let ``Should sum a list using agent postAndReply`` () =
-        let cts = new CancellationTokenSource()
-
         let input = [10; 20; 30; 40; 50]
 
         let expected = [10; 30; 60; 100; 150]
 
-        let agent = Agent.create cts.Token 0 testF
+        let agent = Agent.create 0 testF
 
         let result = input |> List.map (fun x -> let _, y = agent.postAndReply x in y)
 
@@ -116,13 +105,12 @@ module ``Agent Tests`` =
 
     [<Fact>]
     let ``Should sum a list using agent postAndReplyAsync`` () =
-        let cts = new CancellationTokenSource()
 
         let input = [10; 20; 30; 40; 50]
 
         let expected = [10; 30; 60; 100; 150]
 
-        let agent = Agent.create cts.Token 0 testF
+        let agent = Agent.create 0 testF
 
         let asyncs = input |> List.map (fun x ->
             async {
@@ -133,3 +121,4 @@ module ``Agent Tests`` =
         let result = asyncs |> List.map Async.RunSynchronously
 
         test <@ result = expected @>
+        

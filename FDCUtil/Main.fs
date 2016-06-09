@@ -49,7 +49,9 @@ module Agent =
         fetchAsync: unit -> Async<'b>
     }
 
-    let create ctstoken state f =
+    // BUG cancelling ctstoken makes `fetch` and `*andReply*` methods to stuck infinitely
+    // TODO make proper cancellation 
+    let create state f =
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop accState = async {
                 let! agentMessage = inbox.Receive()
@@ -69,7 +71,7 @@ module Agent =
                 //     return ()
             }
             loop state 
-        , ctstoken)
+        )
 
         let post = Post >> agent.Post
         let postAndReply x = 
