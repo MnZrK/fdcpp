@@ -33,3 +33,52 @@ module Result =
         member this.Return(x) = Failure x
         member this.ReturnFrom(x) = x
     let failureWorkflow = new FailureBuilder()
+
+module Agent =
+    type Message<'a, 'b> = 
+    | Post of 'a
+    | PostAndReply of 'a * AsyncReplyChannel<'b * 'b>
+    | Fetch of AsyncReplyChannel<'b>
+    // | Die
+
+    type T<'a, 'b> = {
+        post: 'a -> unit
+        postAndReply: 'a -> ('b * 'b)
+        postAndReplyAsync: 'a -> Async<'b * 'b>
+        fetch: unit -> 'b
+        fetchAsync: unit -> Async<'b>
+    }
+
+    let create ctstoken state f =
+        let agent = MailboxProcessor.Start(fun inbox -> 
+            let rec loop accState = async {
+                let! agentMessage = inbox.Receive()
+                
+                match agentMessage with
+                | Post x ->
+                    let accState' = f x accState
+                    return! loop accState'
+                | PostAndReply (x, replyChannel) ->
+                    let accState' = f x accState
+                    replyChannel.Reply((accState, accState'))
+                    return! loop accState'
+                | Fetch replychannel ->
+                    replychannel.Reply(accState)
+                    return! loop accState
+                // | Die ->
+                //     return ()
+            }
+            loop state 
+        , ctstoken)
+
+        let post = Post >> agent.Post
+        let postAndReply x = 
+            agent.PostAndReply(fun reply -> PostAndReply (x, reply))  
+        let postAndReplyAsync x = 
+            agent.PostAndAsyncReply(fun reply -> PostAndReply (x, reply))
+        let fetch () = 
+            agent.PostAndReply(fun reply -> Fetch reply) 
+        let fetchAsync () = 
+            agent.PostAndAsyncReply(fun reply -> Fetch reply)
+
+        { post = post; postAndReply = postAndReply; postAndReplyAsync = postAndReplyAsync; fetch = fetch; fetchAsync = fetchAsync }
