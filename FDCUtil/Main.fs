@@ -47,11 +47,14 @@ module Agent =
         postAndReplyAsync: 'a -> Async<'b * 'b>
         fetch: unit -> 'b
         fetchAsync: unit -> Async<'b>
+        event: IEvent<'b * 'b>
     }
 
     // BUG cancelling ctstoken makes `fetch` and `*andReply*` methods to stuck infinitely
     // TODO make proper cancellation 
     let create state f =
+        let event = new Event<'b * 'b>()
+
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop accState = async {
                 let! agentMessage = inbox.Receive()
@@ -59,10 +62,12 @@ module Agent =
                 match agentMessage with
                 | Post x ->
                     let accState' = f x accState
+                    event.Trigger((accState, accState'))
                     return! loop accState'
                 | PostAndReply (x, replyChannel) ->
                     let accState' = f x accState
                     replyChannel.Reply((accState, accState'))
+                    event.Trigger((accState, accState'))
                     return! loop accState'
                 | Fetch replychannel ->
                     replychannel.Reply(accState)
@@ -83,4 +88,11 @@ module Agent =
         let fetchAsync () = 
             agent.PostAndAsyncReply(fun reply -> Fetch reply)
 
-        { post = post; postAndReply = postAndReply; postAndReplyAsync = postAndReplyAsync; fetch = fetch; fetchAsync = fetchAsync }
+        { 
+            post = post
+            postAndReply = postAndReply
+            postAndReplyAsync = postAndReplyAsync
+            fetch = fetch
+            fetchAsync = fetchAsync
+            event = event.Publish 
+        }

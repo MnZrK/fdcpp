@@ -121,4 +121,15 @@ module ``Agent Tests`` =
         let result = asyncs |> List.map Async.RunSynchronously
 
         test <@ result = expected @>
+
+    [<Fact>]
+    let ``Should trigger events`` () =
+        let agent = Agent.create 0 testF
+
+        let res = ref (0, 0)
+        agent.event |> Event.add (fun x -> res := x)
+
+        agent.post 10
+
+        test <@ res = ref (0, 10) @>
         
