@@ -25,7 +25,10 @@ let startClientAsync (checkMsgReceived: byte list * byte -> bool) (hostname: str
 
     let client = new System.Net.Sockets.TcpClient()
     async {
-        do! client.ConnectAsync(hostname, port) |> Async.AwaitIAsyncResult |> Async.Ignore
+        // do! client.ConnectAsync(hostname, port) |> Async.AwaitIAsyncResult |> Async.Ignore
+        // TODO fix async 
+        logger.Info "Connecting to (%A %A) ..." hostname port
+        client.Connect(hostname, port)
         logger.Info "Connected to %A %A" hostname port //TODO what if host is not available
         let stream = client.GetStream()
         
