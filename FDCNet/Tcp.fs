@@ -19,7 +19,7 @@ type Client = {
 }
 
 /// It assumes that the message is received when `checkMsgReceived` argument returns true.
-let startClientAsync (checkMsgReceived: byte[] * byte -> bool) (hostname: string) (port: int) =
+let startClientAsync (checkMsgReceived: byte list * byte -> bool) (hostname: string) (port: int) =
     let logger = new Logger()
     let receivedCommand = new Event<byte[]>()
 
@@ -30,23 +30,24 @@ let startClientAsync (checkMsgReceived: byte[] * byte -> bool) (hostname: string
         let stream = client.GetStream()
         
         // TODO use list or something instead of byte[]
-        let rec asyncReadingLoop (message: byte[]) (stream : NetworkStream) = async {
+        let rec asyncReadingLoop (message: byte list) (stream : NetworkStream) = async {
             let! bytes = stream.AsyncRead(1)
             if checkMsgReceived(message, bytes.[0]) then
                 logger.Trace "Triggering `ReceivedCommand` event"
-                receivedCommand.Trigger(message)
-                return! asyncReadingLoop Array.empty stream
+                receivedCommand.Trigger(List.toArray message)
+                return! asyncReadingLoop [] stream
             else
-                return! asyncReadingLoop (Array.append message bytes) stream 
+                return! asyncReadingLoop (List.append message (List.ofArray bytes)) stream 
         }
         
         let cts = new CancellationTokenSource()
-        Async.Start(asyncReadingLoop Array.empty stream, cancellationToken = cts.Token)
+        Async.Start(asyncReadingLoop [] stream, cancellationToken = cts.Token)
         let dispose() =  
             logger.Info "Disposing..." 
             cts.Cancel() 
             client.Close() // TODO check if `Close` is happenning after all tasks related to cts are cancelled 
             
+        // TODO make proper cancellation for agent 
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec asyncWritingLoop() = async {
                 let! msg = inbox.Receive()
