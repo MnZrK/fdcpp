@@ -57,7 +57,7 @@ module ``Result Tests`` =
 module ``Agent Tests`` =
     open System.Threading
 
-    let testF x y = x + y |> Success 
+    let testF x y = x + y |> Success
 
     [<Fact>]
     let ``Should create agent`` () =
@@ -135,7 +135,7 @@ module ``Agent Tests`` =
             @>
 
     [<Fact>]
-    let ``Should trigger events`` () =
+    let ``Should trigger events for success`` () =
         let agent = Agent.create 0 testF
 
         let res = ref (0, 0)
@@ -144,4 +144,15 @@ module ``Agent Tests`` =
         agent.post 10
 
         test <@ res = ref (0, 10) @>
+        
+    [<Fact>]
+    let ``Should not trigger events for failure`` () =
+        let agent = Agent.create 0 (fun _ _ -> Failure "test") 
+
+        let triggered = ref false
+        agent.event |> Event.add (fun _ -> triggered := true)
+
+        agent.post 10
+
+        test <@ triggered = ref false @>
         
