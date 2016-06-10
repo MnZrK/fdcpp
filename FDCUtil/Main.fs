@@ -57,6 +57,39 @@ module Result =
         member this.ReturnFrom(x) = x
     let failureWorkflow = new FailureBuilder()
 
+type ResultList<'a, 'b> = Result<'a, 'b> list
+module ResultList =
+    let swap (xs: ResultList<'a, _>): Result<'a list, _> =
+        let error = 
+            xs 
+            |> List.tryPick (
+                function
+                | Success x -> None
+                | Failure x -> Failure x |> Some
+            ) 
+        
+        match error with
+        | Some x -> x
+        | None -> 
+            xs
+            |> List.choose (
+                function
+                | Failure x -> None
+                | Success x -> x |> Some
+            )
+            |> Success
+
+    let bind (m: Result<'x list, _>) (f: 'x -> Result<'x list, _>): Result<'x list, _> =
+        match m with
+        | Success xs ->
+            xs
+            |> List.map f 
+            |> swap 
+            |> Result.map List.concat
+        | Failure x -> 
+            Failure x 
+    let (>>=) = bind
+
 module AgentWithComplexState =
     open System.Threading
 

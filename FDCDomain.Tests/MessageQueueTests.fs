@@ -10,19 +10,23 @@ module ``Utilities Tests`` =
 
     [<Fact>]
     let ``Should get bytes from ASCII string`` () =
-        test <@ getBytes "123" = [| 49uy; 50uy; 51uy |] @>
+        test <@ getBytes "123" = Success [| 49uy; 50uy; 51uy |] @>
             
     [<Fact>]
+    let ``Should get byte from ASCII char`` () =
+        test <@ getByte '1' = Success 49uy @>
+
+    [<Fact>]
     let ``Should get string from ASCII bytes`` () =
-        test <@ getString [| 49uy; 50uy; 51uy |] = "123" @>
+        test <@ getString [| 49uy; 50uy; 51uy |] = Success "123" @>
             
     [<Fact>]
     let ``Should convert dangerous characters to DCN`` () =
         test <@ 
                 "12$3" 
                 |> getBytes 
-                |> Array.collect byteToDCN 
-                |> getString = "12/%DCN036%/3" 
+                |> Result.map (Array.collect byteToDCN) 
+                |> Result.bind <| getString = Success "12/%DCN036%/3" 
             @>
         
     [<Fact>]
@@ -32,8 +36,8 @@ module ``Utilities Tests`` =
         test <@ 
                 input 
                 |> getBytes 
-                |> Array.collect byteToDCN 
-                |> getString = input 
+                |> Result.map (Array.collect byteToDCN) 
+                |> Result.bind <| getString = Success input 
             @>
 
     [<Fact>]
@@ -43,8 +47,8 @@ module ``Utilities Tests`` =
 
         test <@ 
                 inputBytes
-                |> Array.collect byteToDCN
-                |> getString = stringToDCN inputStr 
+                |> Result.map (Array.collect byteToDCN)
+                |> Result.bind <| getString = stringToDCN inputStr 
             @>
 
     [<Fact>]
@@ -53,13 +57,20 @@ module ``Utilities Tests`` =
 
         let expected = "12$3"
 
-        test <@ DCNtoString input = expected @>
+        test <@ DCNtoString input = Success expected @>
 
     [<Fact>]
     let ``Should convert DCN back and worth without change`` () =
         let input = "12$3|\01235ffffaa"
 
-        test <@ "12$3|\01235ffffaa" |> stringToDCN |> DCNtoString = "12$3|\01235ffffaa" @>
+        test <@ "12$3|\01235ffffaa" |> stringToDCN |> Result.bind <| DCNtoString = Success "12$3|\01235ffffaa" @>
+
+module ``ASCIIString Tests`` =
+    [<Fact>]
+    let ``Should create ASCIIString from valid input`` () =
+        let input = "12312351afdsf$$a  s^^%^%$#|dfqvz"
+
+        test <@ ASCIIString.create input = Success (ASCIIString.ASCIIString input) @>
 
 module ``LockData Tests`` =
 
@@ -67,7 +78,7 @@ module ``LockData Tests`` =
     let ``Should create lock from correct input`` () =
         let input = "12312351afdsfasdfqvz"
 
-        test <@ LockData.create input = Success (LockData.LockData input) @>
+        test <@ LockData.create input = Success (LockData.LockData (ASCIIString.ASCIIString input)) @>
 
     [<Fact>]
     let ``Should not create lock from invalid input`` () =
