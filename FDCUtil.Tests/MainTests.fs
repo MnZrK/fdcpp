@@ -57,11 +57,13 @@ module ``Result Tests`` =
 module ``Agent Tests`` =
     open System.Threading
 
-    let testF x y = x + y |> Success
+    let testF y (x, _) = (x + y, []) |> Success
+    let testDivideF y (x, _) = (x / y, []) |> Success
+    let testExn _ = failwith "I failed"
 
     [<Fact>]
     let ``Should create agent`` () =
-        let agent = Agent.create 0 testF
+        let agent = AgentWithComplexState.create (0, []) testF
 
         test <@ true = true @>
 
@@ -69,85 +71,37 @@ module ``Agent Tests`` =
     let ``Should sum a list using agent post and fetch it`` () =
         let input = [10; 20; 30; 40; 50]
 
-        let expected = List.sum input
+        let expected = (List.sum input, [])
 
-        let agent = Agent.create 0 testF
+        let agent = AgentWithComplexState.create (0, []) testF
 
         input |> List.iter agent.post
         let result = agent.fetch()
 
-        test <@ result = expected @>
+        test <@ result = Success expected @>
 
     [<Fact>]
-    let ``Should sum a list using agent post and fetchAsync it`` () =
-        let input = [10; 20; 30; 40; 50]
+    let ``Should postAndReply properly`` () =
+        let agent = AgentWithComplexState.create (10, []) testF
 
-        let expected = List.sum input
+        let result = agent.postAndReply 20
 
-        let agent = Agent.create 0 testF
-
-        input |> List.iter agent.post
-        let result = agent.fetchAsync() |> Async.RunSynchronously
-
-        test <@ result = expected @>
-
-    [<Fact>]
-    let ``Should sum a list using agent postAndReply`` () =
-        let input = [10; 20; 30; 40; 50]
-
-        let expected = [10; 30; 60; 100; 150]
-
-        let agent = Agent.create 0 testF
-
-        let result = input |> List.map (fun x -> let _, y = agent.postAndReply x in y)
-        
-        test <@ 
-                result |> List.choose (fun res -> 
-                    match res with
-                    | Success x -> Some x
-                    | Failure _ -> None 
-                ) = expected 
-            @>
-
-    [<Fact>]
-    let ``Should sum a list using agent postAndReplyAsync`` () =
-
-        let input = [10; 20; 30; 40; 50]
-
-        let expected = [10; 30; 60; 100; 150]
-
-        let agent = Agent.create 0 testF
-
-        let asyncs = input |> List.map (fun x ->
-            async {
-                let! _, y = agent.postAndReplyAsync x
-                return y
-            } 
-            ) 
-        let result = asyncs |> List.map Async.RunSynchronously
-
-        test <@ 
-                result |> List.choose (fun res -> 
-                    match res with
-                    | Success x -> Some x
-                    | Failure _ -> None 
-                ) = expected 
-            @>
+        test <@ result = Success (Success (30, [])) @>       
 
     [<Fact>]
     let ``Should trigger events for success`` () =
-        let agent = Agent.create 0 testF
+        let agent = AgentWithComplexState.create (0, []) testF
 
-        let res = ref (0, 0)
+        let res = ref ((0, []), (0, []))
         agent.event |> Event.add (fun x -> res := x)
 
         agent.post 10
 
-        test <@ res = ref (0, 10) @>
+        test <@ res = ref ((0, []), (10, [])) @>
         
     [<Fact>]
     let ``Should not trigger events for failure`` () =
-        let agent = Agent.create 0 (fun _ _ -> Failure "test") 
+        let agent = AgentWithComplexState.create (0, []) (fun _ _ -> Failure "test") 
 
         let triggered = ref false
         agent.event |> Event.add (fun _ -> triggered := true)
@@ -155,4 +109,50 @@ module ``Agent Tests`` =
         agent.post 10
 
         test <@ triggered = ref false @>
+
+    [<Fact>]
+    let ``Should not trigger events for inner exception`` () =
+        let agent = AgentWithComplexState.create (0, []) (fun _ _ -> failwith "hello") 
+
+        let triggered = ref false
+        agent.event |> Event.add (fun _ -> triggered := true)
+
+        agent.post 10
+
+        test <@ triggered = ref false @>
+
+    [<Fact>]
+    let ``Should stop the agent`` () =
+        let agent = AgentWithComplexState.create (0, []) testF
+
+        agent.stop()
+
+        test <@ agent.post 10 = () @>
+        test <@ agent.postAndReply 20 = Failure AgentWithComplexState.Error.IsStopped @>
+
+    [<Fact>]
+    let ``Should get proper error when inner exception`` () =
         
+        let agent = AgentWithComplexState.create (10, []) testExn
+
+        let res = agent.postAndReply 10 
+
+        test <@ 
+                match res with
+                | Failure (AgentWithComplexState.OtherError ex) ->
+                    match ex.Message with 
+                    | "I failed" -> true
+                    | _ -> false
+                | _ -> false 
+            @>
+
+    [<Fact>]
+    let ``Should ignore inner exceptions for post`` () =
+
+        let agent = AgentWithComplexState.create (10, []) testDivideF
+
+        agent.post 0
+
+        let res = agent.postAndReply 2 
+
+        test <@ res = Success (Success (5, [])) @> 

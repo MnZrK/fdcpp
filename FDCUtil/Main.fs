@@ -8,6 +8,9 @@ module Result =
         function
         | Success x -> f x |> Success
         | Failure x -> Failure x
+    let map = mapSuccess
+    let (<?>) = map
+
     let mapFailure f =
         function
         | Success x -> Success x
@@ -17,10 +20,25 @@ module Result =
         match m with
         | Success x -> f x
         | Failure x -> Failure x
+    let bind = bindSuccess
+    let (>>=) = bind
+
     let bindFailure m f = 
         match m with
         | Success x -> Success x
         | Failure x -> f x
+
+    let applySuccess mF m =
+        match mF with
+        | Success f -> mapSuccess f m
+        | Failure x -> Failure x
+    let apply = applySuccess
+    let (<*>) = apply
+
+    let applyFailure mF m = 
+        match mF with
+        | Success x -> Success x 
+        | Failure f -> mapFailure f m
 
     type SuccessBuilder() =
         member this.Bind(m, f) = bindSuccess m f
@@ -34,73 +52,118 @@ module Result =
         member this.ReturnFrom(x) = x
     let failureWorkflow = new FailureBuilder()
 
-module Agent =
-    type Message<'action, 'state, 'c> = 
-    | Post of 'action
-    | PostAndReply of 'action * AsyncReplyChannel<'state * Result<'state, 'c>>
-    | Fetch of AsyncReplyChannel<'state>
-    // | Die
+module AgentWithComplexState =
+    open System.Threading
 
-    type T<'action, 'state, 'c> = {
+    type Error = 
+    | IsStopped
+    | OtherError of System.Exception
+
+    type MessageResult<'a> = Result<'a, Error>
+    type FetchResult<'state> = MessageResult<'state>
+    type ReplyResult<'state, 'e> = MessageResult<Result<'state, 'e>>
+
+    type Message<'action, 'state, 'e> = 
+    | Post of 'action
+    | PostAndReply of 'action * AsyncReplyChannel<MessageResult<Result<'state, 'e>>>
+    | Fetch of AsyncReplyChannel<MessageResult<'state>>
+    | Die
+
+    type T<'action, 'state, 'e> = {
         post: 'action -> unit
-        postAndReply: 'action -> ('state * Result<'state, 'c>)
-        postAndReplyAsync: 'action -> Async<'state * Result<'state, 'c>>
+        postAndReply: 'action -> ReplyResult<'state, 'e>
         event: IEvent<'state * 'state>
-        fetch: unit -> 'state
-        fetchAsync: unit -> Async<'state>
+        fetch: unit -> FetchResult<'state>
+        stop: unit -> unit
     }
 
-    // BUG cancelling ctstoken makes `fetch` and `*andReply*` methods to stuck infinitely
-    // TODO make proper cancellation 
-    let create state f =
-        let event = new Event<'state * 'state>()
+    let create (state, deps) f =
+        let event = new Event<('state*'deps) * ('state*'deps)>()
+
+        let stopped = new CancellationTokenSource()
 
         let agent = MailboxProcessor.Start(fun inbox -> 
-            let rec loop accState = async {
+            let rec loop (accState, accDeps) = async {
                 let! agentMessage = inbox.Receive()
                 
                 match agentMessage with
                 | Post x ->
-                    let fResult = f x accState
+                    let fResult = 
+                        try
+                            f x (accState, accDeps) |> Success
+                        with
+                        | ex ->
+                            Error.OtherError ex |> Failure
+                            
                     match fResult with
-                    | Success accState' ->
-                        event.Trigger((accState, accState'))
-                        return! loop accState'
-                    | Failure _ ->
-                        return! loop accState
+                    | Success (Success (accState', accDeps')) ->
+                        if (accState' <> accState) then
+                            let fullState = (accState, accDeps)
+                            let fullState' = (accState', accDeps')
+                            event.Trigger((fullState, fullState'))
+                        return! loop (accState', accDeps')
+                    | _ ->
+                        return! loop (accState, accDeps)
                 | PostAndReply (x, replyChannel) ->
-                    let fResult = f x accState
-                    replyChannel.Reply((accState, fResult))
+                    let fResult =          
+                        try
+                            f x (accState, accDeps) |> Success
+                        with
+                        | ex ->
+                            Error.OtherError ex |> Failure
+
+                    replyChannel.Reply(fResult)
+
                     match fResult with
-                    | Success accState' ->
-                        event.Trigger((accState, accState'))
-                        return! loop accState'
-                    | Failure _ ->
-                        return! loop accState
+                    | Success (Success (accState', accDeps')) ->
+                        if (accState' <> accState) then
+                            let fullState = (accState, accDeps)
+                            let fullState' = (accState', accDeps')
+                            event.Trigger((fullState, fullState'))
+                        return! loop (accState', accDeps')
+                    | _ ->
+                        return! loop (accState, accDeps)
                 | Fetch replychannel ->
-                    replychannel.Reply(accState)
-                    return! loop accState
-                // | Die ->
-                //     return ()
+                    replychannel.Reply(Success (accState, accDeps))
+                    return! loop (accState, accDeps)
+                | Die ->
+                    stopped.Cancel()
+                    return ()
             }
-            loop state 
+            loop (state, deps)
         )
 
+        let postAndReplyHO rc = 
+            let wait = agent.PostAndAsyncReply(rc)
+            let task = Async.StartAsTask(wait, cancellationToken = stopped.Token)
+            let res = 
+                try
+                    Async.AwaitTask task |> Async.RunSynchronously
+                with 
+                | :? System.OperationCanceledException -> 
+                    Error.IsStopped |> Failure
+                | ex ->
+                    OtherError ex |> Failure
+            res
+
         let post = Post >> agent.Post
-        let postAndReply x = 
-            agent.PostAndReply(fun reply -> PostAndReply (x, reply))  
-        let postAndReplyAsync x = 
-            agent.PostAndAsyncReply(fun reply -> PostAndReply (x, reply))
-        let fetch () = 
-            agent.PostAndReply(fun reply -> Fetch reply) 
-        let fetchAsync () = 
-            agent.PostAndAsyncReply(fun reply -> Fetch reply)
+        let postAndReply x = postAndReplyHO (fun reply -> PostAndReply (x, reply))
+        let fetch () = postAndReplyHO (fun reply -> Fetch reply)
+        let stop () = agent.Post Die
 
         { 
             post = post
             postAndReply = postAndReply
-            postAndReplyAsync = postAndReplyAsync
             fetch = fetch
-            fetchAsync = fetchAsync
-            event = event.Publish 
+            event = event.Publish
+            stop = stop
         }
+
+module Regex =
+
+    open System.Text.RegularExpressions
+
+    let (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+        else None
