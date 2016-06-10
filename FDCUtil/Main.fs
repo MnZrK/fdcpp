@@ -40,6 +40,11 @@ module Result =
         | Success x -> Success x 
         | Failure f -> mapFailure f m
 
+    let fold successF failureF m = 
+        match m with
+        | Success x -> successF x
+        | Failure x -> failureF x
+
     type SuccessBuilder() =
         member this.Bind(m, f) = bindSuccess m f
         member this.Return(x) = Success x
@@ -74,15 +79,14 @@ module AgentWithComplexState =
         postAndReply: 'action -> ReplyResult<'state, 'e>
         event: IEvent<'state * 'state>
         fetch: unit -> FetchResult<'state>
-        stop: unit -> unit
     }
 
-    let create (state, deps) f =
+    let loop (state, deps) f cb =
         let event = new Event<('state*'deps) * ('state*'deps)>()
 
         let stopped = new CancellationTokenSource()
 
-        let agent = MailboxProcessor.Start(fun inbox -> 
+        use agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop (accState, accDeps) = async {
                 let! agentMessage = inbox.Receive()
                 
@@ -151,13 +155,14 @@ module AgentWithComplexState =
         let fetch () = postAndReplyHO (fun reply -> Fetch reply)
         let stop () = agent.Post Die
 
-        { 
-            post = post
-            postAndReply = postAndReply
-            fetch = fetch
-            event = event.Publish
-            stop = stop
-        }
+        using {new System.IDisposable with member x.Dispose() = stop()} (fun _ ->
+            { 
+                post = post
+                postAndReply = postAndReply
+                fetch = fetch
+                event = event.Publish
+            } |> cb
+        )        
 
 module Regex =
 

@@ -41,7 +41,7 @@ module Pk =
 
     let create = mapNullString Pk
 
-    let apply f (Pk s) = f s 
+    let fold f (Pk s) = f s 
 
 module LockData =
     type T = LockData of string
@@ -55,20 +55,20 @@ module LockData =
         | _ -> 
             LockData s |> Success
 
-    let apply f (LockData s) = f s
+    let fold f (LockData s) = f s
 
 module NickData = 
     type T = NickData of string
 
     let create = mapNullString NickData
 
-    let apply f (NickData s) = f s
+    let fold f (NickData s) = f s
 
 module KeyData = 
     type T = KeyData of byte[]
 
     let create (lockData: LockData.T) =
-        let lockBytes = LockData.apply getBytes lockData
+        let lockBytes = LockData.fold getBytes lockData
         let nibbleSwap b = ((b<<<4) &&& 240uy) ||| ((b>>>4) &&& 15uy) 
 
         let lockLen = lockBytes.Length
@@ -81,28 +81,28 @@ module KeyData =
         
         key |> Array.map nibbleSwap |> Array.collect byteToDCN
 
-    let apply f (KeyData b) = f b
+    let fold f (KeyData b) = f b
 
 module PasswordData =
     type T = PasswordData of string
 
     let create = mapNullString PasswordData
 
-    let apply f (PasswordData p) = f p
+    let fold f (PasswordData p) = f p
 
 module HostnameData =
     type T = HostnameData of string
 
     let create = mapNullString HostnameData
 
-    let apply f (HostnameData h) = f h
+    let fold f (HostnameData h) = f h
 
 module PortData = 
     type T = PortData of int
 
     let create = PortData
     
-    let apply f (PortData p) = f p
+    let fold f (PortData p) = f p
 
 // domain models
 type LockMessage = {

@@ -63,7 +63,7 @@ module ``Agent Tests`` =
 
     [<Fact>]
     let ``Should create agent`` () =
-        let agent = AgentWithComplexState.create (0, []) testF
+        let agent = AgentWithComplexState.loop (0, []) testF (fun agent -> ())
 
         test <@ true = true @>
 
@@ -73,69 +73,66 @@ module ``Agent Tests`` =
 
         let expected = (List.sum input, [])
 
-        let agent = AgentWithComplexState.create (0, []) testF
-
-        input |> List.iter agent.post
-        let result = agent.fetch()
+        let result = AgentWithComplexState.loop (0, []) testF (fun agent -> 
+            input |> List.iter agent.post
+            agent.fetch()    
+        )
 
         test <@ result = Success expected @>
 
     [<Fact>]
     let ``Should postAndReply properly`` () =
-        let agent = AgentWithComplexState.create (10, []) testF
-
-        let result = agent.postAndReply 20
+        let result = AgentWithComplexState.loop (10, []) testF (fun agent ->
+            agent.postAndReply 20
+        )
 
         test <@ result = Success (Success (30, [])) @>       
 
     [<Fact>]
     let ``Should trigger events for success`` () =
-        let agent = AgentWithComplexState.create (0, []) testF
-
         let res = ref ((0, []), (0, []))
-        agent.event |> Event.add (fun x -> res := x)
 
-        agent.post 10
+        do AgentWithComplexState.loop (0, []) testF (fun agent ->
+            agent.event |> Event.add (fun x -> res := x)
+            agent.post 10
+        )
 
         test <@ res = ref ((0, []), (10, [])) @>
         
     [<Fact>]
     let ``Should not trigger events for failure`` () =
-        let agent = AgentWithComplexState.create (0, []) (fun _ _ -> Failure "test") 
-
         let triggered = ref false
-        agent.event |> Event.add (fun _ -> triggered := true)
-
-        agent.post 10
+         
+        do 
+            AgentWithComplexState.loop (0, []) 
+            <| (fun _ _ -> Failure "test") 
+            <| (fun agent -> 
+                    agent.event |> Event.add (fun _ -> triggered := true)
+                    agent.post 10
+                )
 
         test <@ triggered = ref false @>
 
     [<Fact>]
     let ``Should not trigger events for inner exception`` () =
-        let agent = AgentWithComplexState.create (0, []) (fun _ _ -> failwith "hello") 
-
         let triggered = ref false
-        agent.event |> Event.add (fun _ -> triggered := true)
-
-        agent.post 10
+        
+        do
+            AgentWithComplexState.loop (0, []) 
+            <| (fun _ _ -> failwith "hello")
+            <| (fun agent -> 
+                    agent.event |> Event.add (fun _ -> triggered := true)
+                    agent.post 10
+                ) 
 
         test <@ triggered = ref false @>
 
     [<Fact>]
-    let ``Should stop the agent`` () =
-        let agent = AgentWithComplexState.create (0, []) testF
-
-        agent.stop()
-
-        test <@ agent.post 10 = () @>
-        test <@ agent.postAndReply 20 = Failure AgentWithComplexState.Error.IsStopped @>
-
-    [<Fact>]
     let ``Should get proper error when inner exception`` () =
         
-        let agent = AgentWithComplexState.create (10, []) testExn
-
-        let res = agent.postAndReply 10 
+        let res = 
+            AgentWithComplexState.loop (10, []) testExn
+            <| (fun agent -> agent.postAndReply 10)
 
         test <@ 
                 match res with
@@ -149,10 +146,11 @@ module ``Agent Tests`` =
     [<Fact>]
     let ``Should ignore inner exceptions for post`` () =
 
-        let agent = AgentWithComplexState.create (10, []) testDivideF
-
-        agent.post 0
-
-        let res = agent.postAndReply 2 
+        let res = 
+            AgentWithComplexState.loop (10, []) testDivideF
+            <| (fun agent -> 
+                    agent.post 0
+                    agent.postAndReply 2
+                )
 
         test <@ res = Success (Success (5, [])) @> 
