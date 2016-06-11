@@ -129,6 +129,7 @@ module AgentWithComplexState =
         fetch: unit -> FetchResult<'state>
     }
 
+    /// you should not use this function, use `loop` instead
     let _create (state, deps) f =
         let event = new Event<('state*'deps) * ('state*'deps)>()
 
