@@ -45,6 +45,21 @@ module Result =
         | Success x -> successF x
         | Failure x -> failureF x
 
+    let getSuccess m = 
+        match m with
+        | Success x -> 
+            x
+        | Failure x -> 
+            raise (new System.InvalidOperationException(sprintf "Trying to get Success from Failure: %A" x))
+    let get = getSuccess
+
+    let getFailure m = 
+        match m with
+        | Success x -> 
+            raise (new System.InvalidOperationException(sprintf "Trying to get Failure from Success: %A" x))
+        | Failure x -> 
+            x
+
     type SuccessBuilder() =
         member this.Bind(m, f) = bindSuccess m f
         member this.Return(x) = Success x
@@ -114,12 +129,12 @@ module AgentWithComplexState =
         fetch: unit -> FetchResult<'state>
     }
 
-    let loop (state, deps) f cb =
+    let _create (state, deps) f =
         let event = new Event<('state*'deps) * ('state*'deps)>()
 
         let stopped = new CancellationTokenSource()
 
-        use agent = MailboxProcessor.Start(fun inbox -> 
+        let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop (accState, accDeps) = async {
                 let! agentMessage = inbox.Receive()
                 
@@ -140,6 +155,7 @@ module AgentWithComplexState =
                             event.Trigger((fullState, fullState'))
                         return! loop (accState', accDeps')
                     | _ ->
+                        // swallow the error ... nowhere to return it
                         return! loop (accState, accDeps)
                 | PostAndReply (x, replyChannel) ->
                     let fResult =          
@@ -188,20 +204,35 @@ module AgentWithComplexState =
         let fetch () = postAndReplyHO (fun reply -> Fetch reply)
         let stop () = agent.Post Die
 
-        using {new System.IDisposable with member x.Dispose() = stop()} (fun _ ->
-            { 
-                post = post
-                postAndReply = postAndReply
-                fetch = fetch
-                event = event.Publish
-            } |> cb
-        )        
+        agent,
+        stop,
+        { 
+            post = post
+            postAndReply = postAndReply
+            fetch = fetch
+            event = event.Publish
+        }
+
+    let loop fullstate f cb =
+        let _agent, stop, agent = _create fullstate f  
+        
+        let disposable = {
+            new System.IDisposable with 
+                member x.Dispose() = 
+                    stop()
+                    (_agent :> System.IDisposable).Dispose()
+            } 
+
+        using disposable (fun _ -> cb agent)        
 
 module Regex =
 
     open System.Text.RegularExpressions
 
     let (|Regex|_|) pattern input =
-        let m = Regex.Match(input, pattern)
-        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
-        else None
+        if input = null 
+            then None
+        else
+            let m = Regex.Match(input, pattern)
+            if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+            else None
