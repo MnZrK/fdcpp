@@ -1,7 +1,5 @@
 module FDCUtil.Tests.UnquoteExtensions
 
-#nowarn "44" // to access Swensen.Unquote.Assertions.Internal
-
 open Swensen.Unquote
 
 [<AutoOpen>]
