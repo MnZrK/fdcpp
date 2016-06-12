@@ -1,5 +1,8 @@
 module FDCUtil.Main
 
+let tee fn x = x |> fn |> ignore; x
+let ( |>! ) x fn = tee fn x
+
 type Result<'a, 'b> = 
 | Success of 'a
 | Failure of 'b
@@ -169,6 +172,8 @@ module AgentWithComplexState =
                 (acc_state', acc_deps')
             | _ ->
                 // swallow the error ... nowhere to return it
+                // TODO add error_unhandled event and push all errors there ?
+                //  so we can at least log them when they happen
                 (acc_state, acc_deps)
 
         let process_post_and_reply x (replyChannel: AsyncReplyChannel<Result<'state*'deps, ReplyError<'e>>>) (acc_state, acc_deps) =
