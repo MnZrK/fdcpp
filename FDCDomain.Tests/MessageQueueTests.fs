@@ -103,8 +103,10 @@ module ``KeyData Tests`` =
             ("EXTENDEDPROTOCOLSbWZ4Y^UXrsJBbhd=yxeVJlGdd8wg6", parseHexKey "11 d1 c0 11 b0 a0 10 10 41 20 d1 b1 b1 c0 c0 30 f1 13 53 d0 e6 d6 70 b0 d0 a2 10 93 80 02 a0 c0 95 44 10 d1 33 c1 62 b2 32 2f 25 44 43 4e 30 30 30 25 2f c5 f4 01 15")
         ]
 
-        test <@ input 
-                |> List.filter (fun (str, bytes) -> 
-                    Result.mapSuccess KeyData.create (LockData.create str) <> Success bytes
-                ) = []
+        test 
+            <@ 
+                input 
+                |> List.forall (fun (str, bytes) -> 
+                    Result.mapSuccess KeyData.create (LockData.create str) = Success bytes
+                )
             @>

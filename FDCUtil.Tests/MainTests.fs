@@ -75,9 +75,9 @@ module ``Agent Tests`` =
 
     [<Fact>]
     let ``Should create agent`` () =
-        let agent = loop (0, []) testF (fun agent -> ())
+        let agent = loop (0, []) testF ignore
 
-        test <@ true = true @>
+        test <@ true @>
 
     [<Fact>]
     let ``Should sum a list using agent post and fetch it`` () =

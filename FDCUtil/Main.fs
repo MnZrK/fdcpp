@@ -118,8 +118,8 @@ module AgentWithComplexState =
 
     type Message<'action, 'state, 'e> = 
     | Post of 'action
-    | PostAndReply of 'action * AsyncReplyChannel<MessageResult<Result<'state, 'e>>>
-    | Fetch of AsyncReplyChannel<MessageResult<'state>>
+    | PostAndReply of 'action * AsyncReplyChannel<ReplyResult<'state, 'e>>
+    | Fetch of AsyncReplyChannel<FetchResult<'state>>
     | Die
 
     type T<'action, 'state, 'e> = {
@@ -135,48 +135,55 @@ module AgentWithComplexState =
 
         let stopped = new CancellationTokenSource()
 
+        let process_post x (acc_state, acc_deps) = 
+            let fResult = 
+                try
+                    f x (acc_state, acc_deps) |> Success
+                with
+                | ex ->
+                    Error.OtherError ex |> Failure
+                    
+            match fResult with
+            | Success (Success (acc_state', acc_deps')) ->
+                if (acc_state' <> acc_state) then
+                    let full_state = acc_state, acc_deps
+                    let full_state' = acc_state', acc_deps'
+                    event.Trigger((full_state, full_state'))
+                (acc_state', acc_deps')
+            | _ ->
+                // swallow the error ... nowhere to return it
+                (acc_state, acc_deps)
+
+        let process_post_and_reply x (replyChannel: AsyncReplyChannel<ReplyResult<'state*'deps, 'e>>) (acc_state, acc_deps) =
+            let fResult =          
+                try
+                    f x (acc_state, acc_deps) |> Success
+                with
+                | ex ->
+                    Error.OtherError ex |> Failure
+
+            replyChannel.Reply(fResult)
+
+            match fResult with
+            | Success (Success (acc_state', acc_deps')) ->
+                if (acc_state' <> acc_state) then
+                    let full_state = acc_state, acc_deps
+                    let full_state' = acc_state', acc_deps'
+                    event.Trigger((full_state, full_state'))
+                (acc_state', acc_deps')
+            | _ ->
+                (acc_state, acc_deps)
+
+
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop (acc_state, acc_deps) = async {
                 let! agent_message = inbox.Receive()
                 
                 match agent_message with
-                | Post x ->
-                    let fResult = 
-                        try
-                            f x (acc_state, acc_deps) |> Success
-                        with
-                        | ex ->
-                            Error.OtherError ex |> Failure
-                            
-                    match fResult with
-                    | Success (Success (acc_state', acc_deps')) ->
-                        if (acc_state' <> acc_state) then
-                            let full_state = acc_state, acc_deps
-                            let full_state' = acc_state', acc_deps'
-                            event.Trigger((full_state, full_state'))
-                        return! loop (acc_state', acc_deps')
-                    | _ ->
-                        // swallow the error ... nowhere to return it
-                        return! loop (acc_state, acc_deps)
+                | Post x -> 
+                    return! loop (process_post x (acc_state, acc_deps))
                 | PostAndReply (x, replyChannel) ->
-                    let fResult =          
-                        try
-                            f x (acc_state, acc_deps) |> Success
-                        with
-                        | ex ->
-                            Error.OtherError ex |> Failure
-
-                    replyChannel.Reply(fResult)
-
-                    match fResult with
-                    | Success (Success (acc_state', acc_deps')) ->
-                        if (acc_state' <> acc_state) then
-                            let full_state = acc_state, acc_deps
-                            let full_state' = acc_state', acc_deps'
-                            event.Trigger((full_state, full_state'))
-                        return! loop (acc_state', acc_deps')
-                    | _ ->
-                        return! loop (acc_state, acc_deps)
+                    return! loop (process_post_and_reply x replyChannel (acc_state, acc_deps))
                 | Fetch replychannel ->
                     replychannel.Reply(Success (acc_state, acc_deps))
                     return! loop (acc_state, acc_deps)
@@ -202,7 +209,7 @@ module AgentWithComplexState =
 
         let post = Post >> agent.Post
         let post_and_reply x = create_'post_and_reply' (fun reply -> PostAndReply (x, reply))
-        let fetch () = create_'post_and_reply' (fun reply -> Fetch reply)
+        let fetch () = create_'post_and_reply' Fetch
         let stop () = agent.Post Die
 
         agent,
@@ -231,9 +238,10 @@ module Regex =
     open System.Text.RegularExpressions
 
     let (|Regex|_|) pattern input =
-        if input = null 
-            then None
-        else
+        match input with
+        | null -> 
+            None
+        | _ ->
             let m = Regex.Match(input, pattern)
             if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
             else None

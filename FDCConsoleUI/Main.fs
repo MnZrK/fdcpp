@@ -17,8 +17,8 @@ let main argv =
     let logger = new Logger() 
     logger.Info "FDCConsoleUI is starting! args: %A" argv
     
-    let agent = Server.startServer { host = host; port = port } (Dcpp.Message.Hello.NickData "MnZrKk")
-    Thread.Sleep(5000)
+    // let agent = Server.startServer { host = host; port = port } (Dcpp.Message.Hello.NickData "MnZrKk")
+    // Thread.Sleep(5000)
 
     logger.Info "Shutting down..."
         

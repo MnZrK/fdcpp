@@ -11,7 +11,11 @@ Note that the build is managed using FAKE, so .sln file is dummy. You are free t
 ## Build
 
     Run build.cmd
-    
+
+or for quick building (skipping Paket version check):
+
+    Run buildQ.cmd
+
 ## Run
 
 After building,
