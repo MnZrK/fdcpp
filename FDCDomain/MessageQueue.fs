@@ -48,7 +48,7 @@ let stringToDCN (s: string) =
     |> Result.bind <| getStringL
 
 let DCNtoString (str: string) = 
-    Result.successWorkflow {
+    Result.success_workflow {
         let! str0uy = getString [|0uy|]
         let! str5uy = getString [|5uy|]
         let! str36uy = getString [|36uy|]

@@ -22,13 +22,13 @@ module ``Result Tests`` =
             Failure (sprintf "%i is less than 10" x)
 
     [<Fact>]
-    let ``Should work with successWorkflow and success values`` () =
+    let ``Should work with success_workflow and success values`` () =
         let xinput = 15
         let yinput = 20
 
         let expected = xinput + yinput
 
-        let result = successWorkflow {
+        let result = success_workflow {
             let! x = testFun xinput
             let! y = testFun yinput
             return x + y
@@ -37,11 +37,11 @@ module ``Result Tests`` =
         test <@ result = Success expected @>
         
     [<Fact>]
-    let ``Should work with successWorkflow and first failure value`` () =
+    let ``Should work with success_workflow and first failure value`` () =
         let xinput = 5
         let yinput = 20
 
-        let result = successWorkflow {
+        let result = success_workflow {
             let! x = testFun xinput
             let! y = testFun yinput
             return x + y
@@ -50,11 +50,11 @@ module ``Result Tests`` =
         test <@ result = Failure "5 is less than 10" @>
         
     [<Fact>]
-    let ``Should work with successWorkflow and second failure value`` () =
+    let ``Should work with success_workflow and second failure value`` () =
         let xinput = 15
         let yinput = 6
 
-        let result = successWorkflow {
+        let result = success_workflow {
             let! x = testFun xinput
             let! y = testFun yinput
             return x + y
@@ -93,9 +93,9 @@ module ``Agent Tests`` =
         test <@ result = Success expected @>
 
     [<Fact>]
-    let ``Should postAndReply properly`` () =
+    let ``Should post_and_reply properly`` () =
         let result = loop (10, []) testF (fun agent ->
-            agent.postAndReply 20
+            agent.post_and_reply 20
         )
 
         test <@ result = Success (Success (30, [])) @>       
@@ -152,7 +152,7 @@ module ``Agent Tests`` =
         
         let res = 
             loop (10, []) testExn
-            <| (fun agent -> agent.postAndReply 10)
+            <| (fun agent -> agent.post_and_reply 10)
 
         test <@ 
                 match res with
@@ -170,7 +170,7 @@ module ``Agent Tests`` =
             loop (10, []) testDivideF
             <| (fun agent -> 
                     agent.post 0
-                    agent.postAndReply 2
+                    agent.post_and_reply 2
                 )
 
         test <@ res = Success (Success (5, [])) @> 
@@ -190,7 +190,7 @@ module ``Agent Tests`` =
             <| (fun agent ->
                     agent.post x'
                     agent.fetch() |> ignore
-                    agent.postAndReply x'' |> ignore
+                    agent.post_and_reply x'' |> ignore
                     agent.fetch() |> ignore
                 )
 
@@ -202,7 +202,7 @@ module ``Agent Tests`` =
             <| (fun agent ->
                     agent.post x'
                     agent.fetch() |> ignore
-                    agent.postAndReply x'' |> ignore
+                    agent.post_and_reply x'' |> ignore
                     agent.fetch() |> ignore
                 )
 
@@ -234,17 +234,17 @@ module ``Agent Tests`` =
                         override __.Post(agent, m) = !returned = m |@ sprintf "after fetch model: %i <> %i" m !returned
                         override __.ToString() = "fetch" }
 
-                let postAndReply x = 
+                let post_and_reply x = 
                     // not thread-safe
                     let returned = ref 0
                     { new Command<SutType, ModelType>() with
                         override __.RunActual agent = 
-                            let res, _ = (agent.postAndReply x |> Result.get |> Result.get)
+                            let res, _ = (agent.post_and_reply x |> Result.get |> Result.get)
                             returned := res
                             agent
                         override __.RunModel m = m + x
-                        override __.Post(agent, m) = !returned = m |@ sprintf "after postAndReply model: %i <> %i" m !returned
-                        override __.ToString() = sprintf "postAndReply %A" x }
+                        override __.Post(agent, m) = !returned = m |@ sprintf "after post_and_reply model: %i <> %i" m !returned
+                        override __.ToString() = sprintf "post_and_reply %A" x }
 
                 { new ICommandGenerator<SutType, ModelType> with
                     member __.InitialActual = sutConstructor()
@@ -256,7 +256,7 @@ module ``Agent Tests`` =
                         }
                         let postAndReplyGen = gen {
                             let! elem = Arb.generate<int>
-                            return postAndReply elem 
+                            return post_and_reply elem 
                         }
                         let fetchGen = gen {
                             return fetch()
@@ -301,11 +301,11 @@ module ``Agent Tests`` =
                     )
 
                 let post_and_reply x = 
-                    create_operation (sprintf "postAndReply %A" x)
+                    create_operation (sprintf "post_and_reply %A" x)
                     <| (+) x
                     <| (fun agent m -> 
-                        let res, _ = (agent.postAndReply x |> Result.get |> Result.get)
-                        res = m |@ sprintf "model: %i <> postAndReply: %i" m res
+                        let res, _ = (agent.post_and_reply x |> Result.get |> Result.get)
+                        res = m |@ sprintf "model: %i <> post_and_reply: %i" m res
                     )
                 
                 create_machine create_sut (fun _ -> 
