@@ -1,4 +1,4 @@
-namespace FDCTestHelpers
+namespace FDCTestHelper
 
 module UnquoteExtensions =
     open Swensen.Unquote

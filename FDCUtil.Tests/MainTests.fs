@@ -5,8 +5,8 @@ open Swensen.Unquote
 open FsCheck
 open FsCheck.Xunit
 
-open FDCTestHelpers.UnquoteExtensions
-open FDCTestHelpers.FsCheckExtensions
+open FDCTestHelper.UnquoteExtensions
+open FDCTestHelper.FsCheckExtensions
 
 open FDCUtil.Main
 
