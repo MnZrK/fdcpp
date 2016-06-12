@@ -37,7 +37,12 @@ Target "BuildTests" (fun _ ->
 
 Target "RunTests" (fun _ ->
     !! (buildDir @@ "*.Tests.dll") 
-    |> xUnit2 (fun p -> { p with HtmlOutputPath = Some (buildDir @@ "xunit.html") })
+    |> xUnit2 (fun p -> { p with Parallel = ParallelMode.All })
+)
+
+Target "RunTestsSequential" (fun _ ->
+    !! (buildDir @@ "*.Tests.dll") 
+    |> xUnit2 (fun p -> { p with Parallel = ParallelMode.NoParallelization })
 )
 
 Target "Deploy" (fun _ ->
