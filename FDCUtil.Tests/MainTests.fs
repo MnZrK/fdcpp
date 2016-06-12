@@ -5,7 +5,8 @@ open Swensen.Unquote
 open FsCheck
 open FsCheck.Xunit
 
-open FDCUtil.Tests.UnquoteExtensions
+open FDCTestHelpers.UnquoteExtensions
+open FDCTestHelpers.FsCheckExtensions
 
 open FDCUtil.Main
 
@@ -101,8 +102,6 @@ module ``Agent Tests`` =
 
     [<Property>]
     let ``Should trigger event only when state changes`` x x' =
-        let state_should_change = x' <> 0
-
         let res = ref None
         do
             loop (x, []) testF 
@@ -118,7 +117,7 @@ module ``Agent Tests`` =
         // giving a chance for another thread to update the ref 
         Async.Sleep(1) |> Async.RunSynchronously 
     
-        tryRaise !res 
+        try_raise !res 
         
     [<Fact>]
     let ``Should not trigger events for failure`` () =
@@ -206,6 +205,7 @@ module ``Agent Tests`` =
                     agent.postAndReply x'' |> ignore
                     agent.fetch() |> ignore
                 )
+
     module ``Model-based Tests`` =
         type SutType = T<int, int*(unit -> unit) list, string>
         type ModelType = int
@@ -276,6 +276,52 @@ module ``Agent Tests`` =
             let prop = spec sutConstructor initialState |> Command.toProperty
 
             Check.One ({Config.QuickThrowOnFailure with QuietOnSuccess = true }, prop)
+
+    module ``Model-based Tests (experimental version)`` =
+        open FsCheck.Experimental
+
+        type SutType = T<int, int*(unit -> unit) list, string>
+        type ModelType = int
+
+        [<Property>]
+        let ``Should conform to the model`` () =
+            let spec create_sut = 
+                let post x = 
+                    let label = sprintf "post %A" x
+                    create_operation label
+                    <| (+) x
+                    <| (fun agent m -> agent.post x; () |@ label)
+
+                let fetch =
+                    create_operation "fetch"
+                    <| id
+                    <| (fun agent m -> 
+                        let res, _ = agent.fetch() |> Result.get
+                        res = m |@ sprintf "model: %i <> fetch: %i" m res
+                    )
+
+                let post_and_reply x = 
+                    create_operation (sprintf "postAndReply %A" x)
+                    <| (+) x
+                    <| (fun agent m -> 
+                        let res, _ = (agent.postAndReply x |> Result.get |> Result.get)
+                        res = m |@ sprintf "model: %i <> postAndReply: %i" m res
+                    )
+                
+                create_machine create_sut (fun _ -> 
+                    Gen.oneof [
+                            Gen.create1 post
+                            Gen.create1 post_and_reply 
+                            Gen.constant fetch ])
+
+            let create_sut initial_state = 
+                let _, _, sut = 
+                    _create 
+                    <| (initial_state, [])
+                    <| (fun x (state, deps) -> (state+x, deps) |> Success) 
+                sut
+            
+            spec create_sut |> StateMachine.toProperty
 
 module ``Regex Tests`` =
     open Regex
