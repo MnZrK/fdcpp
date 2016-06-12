@@ -2,6 +2,9 @@ module FDCLogger.NLogLogger
 
 open System
 
+// TODO move ILogger somewhere else and update references
+open FDCDomain.MessageQueue
+
 /// All initial initialization for the logger is done in the 
 /// static constructor, ie when the object of the class is 
 /// created for the first time. Static constructors are thread-safe

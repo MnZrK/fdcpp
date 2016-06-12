@@ -145,8 +145,4 @@ module ``startQueue Tests`` =
             <| create_dummy_logger
             <| connect_info
         
-        test <@ 
-                match res with
-                | Success (Success _) -> true
-                | _ -> false
-            @>
+        test <@ Result.isSuccess res @>

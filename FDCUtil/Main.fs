@@ -3,7 +3,25 @@ module FDCUtil.Main
 type Result<'a, 'b> = 
 | Success of 'a
 | Failure of 'b
-module Result = 
+module Result =
+
+    // type Aggregated<'a, 'b> =
+    // | Inner of 'a
+    // | Outer of 'b
+
+    // let flattenSuccess (mm: Result<Result<'a,'c>,'b>) =
+    //     match mm with
+    //     | Failure e -> Outer e |> Failure
+    //     | Success m ->
+    //         match m with
+    //         | Failure e -> Inner e |> Failure
+    //         | Success x -> Success x
+
+    let isSuccess = 
+        function
+        | Success _ -> true
+        | Failure _ -> false
+
     let mapSuccess f =
         function
         | Success x -> f x |> Success
@@ -108,25 +126,25 @@ module ResultList =
 module AgentWithComplexState =
     open System.Threading
 
-    type Error = 
+    type ReplyError<'e> = 
     | IsStopped
-    | OtherError of System.Exception
+    | ActionFailure of 'e
+    | ActionException of System.Exception
 
-    type MessageResult<'a> = Result<'a, Error>
-    type FetchResult<'state> = MessageResult<'state>
-    type ReplyResult<'state, 'e> = MessageResult<Result<'state, 'e>>
+    type FetchError =
+    | IsStopped
 
     type internal Message<'action, 'state, 'e> = 
     | Post of 'action
-    | PostAndReply of 'action * AsyncReplyChannel<ReplyResult<'state, 'e>>
-    | Fetch of AsyncReplyChannel<FetchResult<'state>>
+    | PostAndReply of 'action * AsyncReplyChannel<Result<'state, ReplyError<'e>>>
+    | Fetch of AsyncReplyChannel<'state>
     | Die
 
     type T<'action, 'state, 'e> = {
         post: 'action -> unit
-        post_and_reply: 'action -> ReplyResult<'state, 'e>
+        post_and_reply: 'action -> Result<'state, ReplyError<'e>>
         state_changed: IEvent<'state * 'state>
-        fetch: unit -> FetchResult<'state>
+        fetch: unit -> Result<'state, FetchError>
     }
 
     let internal _create (state, deps) f =
@@ -137,13 +155,13 @@ module AgentWithComplexState =
         let process_post x (acc_state, acc_deps) = 
             let fResult = 
                 try
-                    f x (acc_state, acc_deps) |> Success
+                    f x (acc_state, acc_deps) |> Result.get |> Some
                 with
-                | ex ->
-                    Error.OtherError ex |> Failure
+                | _ -> None
+
                     
             match fResult with
-            | Success (Success (acc_state', acc_deps')) ->
+            | Some (acc_state', acc_deps') ->
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
@@ -153,18 +171,20 @@ module AgentWithComplexState =
                 // swallow the error ... nowhere to return it
                 (acc_state, acc_deps)
 
-        let process_post_and_reply x (replyChannel: AsyncReplyChannel<ReplyResult<'state*'deps, 'e>>) (acc_state, acc_deps) =
+        let process_post_and_reply x (replyChannel: AsyncReplyChannel<Result<'state*'deps, ReplyError<'e>>>) (acc_state, acc_deps) =
             let fResult =          
                 try
-                    f x (acc_state, acc_deps) |> Success
+                    match f x (acc_state, acc_deps) with
+                    | Success x -> Success x
+                    | Failure e -> ReplyError.ActionFailure e |> Failure
                 with
                 | ex ->
-                    Error.OtherError ex |> Failure
+                    ReplyError.ActionException ex |> Failure
 
             replyChannel.Reply(fResult)
 
             match fResult with
-            | Success (Success (acc_state', acc_deps')) ->
+            | Success (acc_state', acc_deps') ->
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
@@ -172,7 +192,6 @@ module AgentWithComplexState =
                 (acc_state', acc_deps')
             | _ ->
                 (acc_state, acc_deps)
-
 
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop (acc_state, acc_deps) = async {
@@ -184,7 +203,7 @@ module AgentWithComplexState =
                 | PostAndReply (x, replyChannel) ->
                     return! loop (process_post_and_reply x replyChannel (acc_state, acc_deps))
                 | Fetch replychannel ->
-                    replychannel.Reply(Success (acc_state, acc_deps))
+                    replychannel.Reply((acc_state, acc_deps))
                     return! loop (acc_state, acc_deps)
                 | Die ->
                     stopped.Cancel()
@@ -193,22 +212,29 @@ module AgentWithComplexState =
             loop (state, deps)
         )
 
-        let create_'post_and_reply' rc = 
-            let wait = agent.PostAndAsyncReply(rc)
+        let post = Post >> agent.Post
+        let post_and_reply x = 
+            let wait = agent.PostAndAsyncReply(fun reply -> PostAndReply (x, reply))
             let task = Async.StartAsTask(wait, cancellationToken = stopped.Token)
             let res = 
                 try
                     Async.AwaitTask task |> Async.RunSynchronously
                 with 
                 | :? System.OperationCanceledException -> 
-                    Error.IsStopped |> Failure
-                | ex ->
-                    OtherError ex |> Failure
+                    ReplyError.IsStopped |> Failure
             res
 
-        let post = Post >> agent.Post
-        let post_and_reply x = create_'post_and_reply' (fun reply -> PostAndReply (x, reply))
-        let fetch () = create_'post_and_reply' Fetch
+        let fetch () = 
+            let wait = agent.PostAndAsyncReply(fun reply -> Fetch (reply))
+            let task = Async.StartAsTask(wait, cancellationToken = stopped.Token)
+            let res = 
+                try
+                    Async.AwaitTask task |> Async.RunSynchronously |> Success
+                with 
+                | :? System.OperationCanceledException -> 
+                    FetchError.IsStopped |> Failure
+            res
+
         let stop () = agent.Post Die
 
         agent,

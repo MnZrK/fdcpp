@@ -22,10 +22,13 @@ type CreateLogger = unit -> ILogger
 
 // errors
 type StringError = 
-    | Missing
-    | NotASCIIString
-    | MustNotBeShorterThan of int
-    | CouldntConvert of Exception
+| Missing
+| NotASCIIString
+| MustNotBeShorterThan of int
+| CouldntConvert of Exception
+
+type QueueError<'a> = 
+| CouldntConnect of 'a
 
 // utilities
 let getBytes (str: string) = 
@@ -301,5 +304,9 @@ let start_queue await_terminator (create_log: CreateLogger) connect_info =
         log.Info "Connecting to (%A)..." connect_info
         let connectResult = agent.post_and_reply <| Connect connect_info
 
-        connectResult |> (Result.map >> Result.map) (fun _ -> await_terminator |> Async.RunSynchronously) 
+        match connectResult with
+        | Failure e ->
+            CouldntConnect e |> Failure
+        | Success actionResult -> 
+            await_terminator |> Async.RunSynchronously |> Success
     )

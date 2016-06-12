@@ -98,7 +98,7 @@ module ``Agent Tests`` =
             agent.post_and_reply 20
         )
 
-        test <@ result = Success (Success (30, [])) @>       
+        test <@ result = Success (30, []) @>       
 
     [<Property>]
     let ``Should trigger event only when state changes`` x x' =
@@ -156,7 +156,7 @@ module ``Agent Tests`` =
 
         test <@ 
                 match res with
-                | Failure (OtherError ex) ->
+                | Failure (ActionException ex) ->
                     match ex.Message with 
                     | "I failed" -> true
                     | _ -> false
@@ -173,7 +173,7 @@ module ``Agent Tests`` =
                     agent.post_and_reply 2
                 )
 
-        test <@ res = Success (Success (5, [])) @> 
+        test <@ res = Success (5, []) @> 
 
     type MyAction = float
     type MyState = int
@@ -239,7 +239,7 @@ module ``Agent Tests`` =
                     let returned = ref 0
                     { new Command<SutType, ModelType>() with
                         override __.RunActual agent = 
-                            let res, _ = (agent.post_and_reply x |> Result.get |> Result.get)
+                            let res, _ = agent.post_and_reply x |> Result.get
                             returned := res
                             agent
                         override __.RunModel m = m + x
@@ -304,7 +304,7 @@ module ``Agent Tests`` =
                     create_operation (sprintf "post_and_reply %A" x)
                     <| (+) x
                     <| (fun agent m -> 
-                        let res, _ = (agent.post_and_reply x |> Result.get |> Result.get)
+                        let res, _ = agent.post_and_reply x |> Result.get
                         res = m |@ sprintf "model: %i <> post_and_reply: %i" m res
                     )
                 

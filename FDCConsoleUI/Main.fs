@@ -6,20 +6,27 @@ open System.Threading
 open FDCUtil.Main
 open FDCLogger
 open FDCNet
-open FDCDomain
+open FDCDomain.MessageQueue
 
 [<EntryPoint>]
 let main argv =
-    // let host = "p2p.academ.org"
-    let host = "localhost"
-    let port = 411
-
-    let logger = new Logger() 
+    let logger = new Logger ()
     logger.Info "FDCConsoleUI is starting! args: %A" argv
     
-    // let agent = Server.startServer { host = host; port = port } (Dcpp.Message.Hello.NickData "MnZrKk")
-    // Thread.Sleep(5000)
+    let connect_info = {
+        host = HostnameData.create "localhost" |> Result.get
+        port = PortData.create 411 |> Result.get
+    }
+    let create_log () = (new Logger() :> ILogger)  
+
+    let res = 
+        start_queue
+        <| (async { do! Async.Sleep 5000 })
+        <| create_log
+        <| connect_info
+
+    res |> Result.mapFailure (fun e -> logger.Fatal "Could not start main queue: %A" e) |> ignore
 
     logger.Info "Shutting down..."
         
-    0 // return an integer exit code
+    0

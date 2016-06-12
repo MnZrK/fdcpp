@@ -1,6 +1,8 @@
 module FDCLogger.ConsoleLogger
 
 open System
+// TODO move ILogger somewhere else and update references
+open FDCDomain.MessageQueue
 
 type Logger() = 
     let logEvent prefix fmt =
