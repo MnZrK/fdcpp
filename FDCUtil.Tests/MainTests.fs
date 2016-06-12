@@ -106,7 +106,7 @@ module ``Agent Tests`` =
         do
             loop (x, []) testF 
             <| (fun agent ->
-                agent.event 
+                agent.state_changed 
                 |> Event.add (fun ((state, deps), (state', deps')) ->
                     res := testO <@ state <> state' @>
                 )
@@ -127,7 +127,7 @@ module ``Agent Tests`` =
             loop (0, []) 
             <| (fun _ _ -> Failure "test") 
             <| (fun agent -> 
-                    agent.event |> Event.add (fun _ -> triggered := true)
+                    agent.state_changed |> Event.add (fun _ -> triggered := true)
                     agent.post 10
                 )
 
@@ -141,7 +141,7 @@ module ``Agent Tests`` =
             loop (0, []) 
             <| (fun _ _ -> failwith "hello")
             <| (fun agent -> 
-                    agent.event |> Event.add (fun _ -> triggered := true)
+                    agent.state_changed |> Event.add (fun _ -> triggered := true)
                     agent.post 10
                 ) 
 

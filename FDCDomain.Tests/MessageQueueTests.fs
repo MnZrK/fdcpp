@@ -112,26 +112,41 @@ module ``KeyData Tests`` =
             @>
 
 module ``startQueue Tests`` =
-    let dummy_logger = 
+    let dummy_logger =
+        let dummy_log fmt = 
+            Printf.kprintf (fun s -> ()) fmt
+
         { new ILogger with 
-            member __.Trace _ = ()
-            member __.TraceException _ _ = ()
-            member __.Debug _ = ()
-            member __.DebugException _ _ = ()
-            member __.Info _ = ()
-            member __.InfoException _ _ = ()
-            member __.Warn _ = ()
-            member __.WarnException _ _ = ()
-            member __.Error _ = ()
-            member __.ErrorException _ _ = ()
-            member __.Fatal _ = ()
-            member __.FatalException _ _ = () } 
+            member __.Trace fmt = dummy_log fmt
+            member __.TraceException _ fmt = dummy_log fmt
+            member __.Debug fmt = dummy_log fmt
+            member __.DebugException _ fmt = dummy_log fmt
+            member __.Info fmt = dummy_log fmt
+            member __.InfoException _ fmt = dummy_log fmt
+            member __.Warn fmt = dummy_log fmt
+            member __.WarnException _ fmt = dummy_log fmt
+            member __.Error fmt = dummy_log fmt
+            member __.ErrorException _ fmt = dummy_log fmt
+            member __.Fatal fmt = dummy_log fmt
+            member __.FatalException _ fmt = dummy_log fmt } 
 
     let create_dummy_logger () = dummy_logger
 
     [<Fact>]
     let ``Should start queue`` () =
+        let connect_info = {
+            host = HostnameData.create "localhost" |> Result.get
+            port = PortData.create 411 |> Result.get
+        }
+
         let res = 
-            startQueue
+            start_queue
+            <| (async { do! Async.Sleep 1 })
             <| create_dummy_logger
-        ()
+            <| connect_info
+        
+        test <@ 
+                match res with
+                | Success (Success _) -> true
+                | _ -> false
+            @>

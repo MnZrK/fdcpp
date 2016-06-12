@@ -6,18 +6,18 @@ open FDCUtil.Main
 
 // infrastructure interfaces
 type ILogger =
-    abstract Trace: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract TraceException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract Debug: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract DebugException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract Info: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract InfoException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract Warn: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract WarnException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract Error: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract ErrorException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract Fatal: fmt: Printf.StringFormat<'a, unit> -> unit
-    abstract FatalException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> unit
+    abstract Trace: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract TraceException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Debug: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract DebugException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Info: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract InfoException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Warn: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract WarnException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Error: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract ErrorException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Fatal: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract FatalException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
 type CreateLogger = unit -> ILogger 
 
 // errors
@@ -185,7 +185,15 @@ module HostnameData =
 module PortData = 
     type T = PortData of int
 
-    let create = PortData
+    type Error = 
+    | Negative
+    | TooBig
+
+    let create port =
+        match port with
+        | _ when port <= 0 -> Error.Negative |> Failure
+        | _ when port >= 65535 -> Error.TooBig |> Failure
+        | _ -> PortData port |> Success 
     
     let fold f (PortData p) = f p
 
@@ -231,8 +239,67 @@ type AgentAction =
     | ReceiveMessage of DcppReceiveMessage
     | Connect of ConnectionInfo
 
-let startQueue (create_log: CreateLogger) =
+type State = 
+| NotConnected
+| Connected      of ConnectionInfo
+| LockAcquired   of ConnectionInfo * LockData.T 
+| WaitingForAuth of ConnectionInfo * LockData.T * NickData.T
+| LoggedIn       of ConnectionInfo * LockData.T * NickData.T
+
+// dont know how to name this section
+type ITransport = 
+    inherit IDisposable 
+    abstract Received: IEvent<DcppReceiveMessage>
+    abstract Write: DcppSendMessage -> unit
+
+type Dependencies = {
+    transport: ITransport
+}
+
+// domain logic (functions)
+let dispatch_action (create_log: CreateLogger) action (state, deps) =
     let log = create_log()
-    log.Trace "Starting queue..."
+    log.Trace "Dispatching action..." 
+    (state, deps) |> Success
+
+let start_queue await_terminator (create_log: CreateLogger) connect_info =
+    let log = create_log()
+    log.Info "Starting queue..."
     
-    ()
+    let dispatch_action_applied = dispatch_action create_log
+
+    AgentWithComplexState.loop 
+    <| (State.NotConnected, None) 
+    <| dispatch_action create_log
+    <| (fun agent -> 
+        log.Trace "We are inside agent now!"
+
+        let full_state_events = agent.state_changed
+        let state_changed = 
+            agent.state_changed 
+            |> Event.map (fun ((state, _), (state', _)) ->
+                (state, state')
+            )
+        
+        state_changed
+        |> Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
+
+        full_state_events 
+        |> Event.choose (
+            function
+            | ((NotConnected, _), (Connected ci, Some deps)) -> (ci, deps) |> Some
+            | _ -> None)
+        |> Event.add (fun (ci, deps) -> 
+            log.Info "Connected to (%A)" ci
+            
+            deps.transport.Received
+            |> Event.add (fun dcpp_msg -> 
+                log.Trace "Received message %A" dcpp_msg
+            )
+        )
+
+        log.Info "Connecting to (%A)..." connect_info
+        let connectResult = agent.post_and_reply <| Connect connect_info
+
+        connectResult |> (Result.map >> Result.map) (fun _ -> await_terminator |> Async.RunSynchronously) 
+    )

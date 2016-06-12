@@ -116,7 +116,7 @@ module AgentWithComplexState =
     type FetchResult<'state> = MessageResult<'state>
     type ReplyResult<'state, 'e> = MessageResult<Result<'state, 'e>>
 
-    type Message<'action, 'state, 'e> = 
+    type internal Message<'action, 'state, 'e> = 
     | Post of 'action
     | PostAndReply of 'action * AsyncReplyChannel<ReplyResult<'state, 'e>>
     | Fetch of AsyncReplyChannel<FetchResult<'state>>
@@ -125,13 +125,12 @@ module AgentWithComplexState =
     type T<'action, 'state, 'e> = {
         post: 'action -> unit
         post_and_reply: 'action -> ReplyResult<'state, 'e>
-        event: IEvent<'state * 'state>
+        state_changed: IEvent<'state * 'state>
         fetch: unit -> FetchResult<'state>
     }
 
-    /// WARNING you should not use this function, use `loop` instead
-    let _create (state, deps) f =
-        let event = new Event<('state*'deps) * ('state*'deps)>()
+    let internal _create (state, deps) f =
+        let state_changed = new Event<('state*'deps) * ('state*'deps)>()
 
         let stopped = new CancellationTokenSource()
 
@@ -148,7 +147,7 @@ module AgentWithComplexState =
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
-                    event.Trigger((full_state, full_state'))
+                    state_changed.Trigger((full_state, full_state'))
                 (acc_state', acc_deps')
             | _ ->
                 // swallow the error ... nowhere to return it
@@ -169,7 +168,7 @@ module AgentWithComplexState =
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
-                    event.Trigger((full_state, full_state'))
+                    state_changed.Trigger((full_state, full_state'))
                 (acc_state', acc_deps')
             | _ ->
                 (acc_state, acc_deps)
@@ -218,7 +217,7 @@ module AgentWithComplexState =
             post = post
             post_and_reply = post_and_reply
             fetch = fetch
-            event = event.Publish
+            state_changed = state_changed.Publish
         }
 
     let loop full_state f cb =
