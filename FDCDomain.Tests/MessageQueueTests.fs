@@ -110,3 +110,28 @@ module ``KeyData Tests`` =
                     Result.mapSuccess KeyData.create (LockData.create str) = Success bytes
                 )
             @>
+
+module ``startQueue Tests`` =
+    let dummy_logger = 
+        { new ILogger with 
+            member __.Trace _ = ()
+            member __.TraceException _ _ = ()
+            member __.Debug _ = ()
+            member __.DebugException _ _ = ()
+            member __.Info _ = ()
+            member __.InfoException _ _ = ()
+            member __.Warn _ = ()
+            member __.WarnException _ _ = ()
+            member __.Error _ = ()
+            member __.ErrorException _ _ = ()
+            member __.Fatal _ = ()
+            member __.FatalException _ _ = () } 
+
+    let create_dummy_logger () = dummy_logger
+
+    [<Fact>]
+    let ``Should start queue`` () =
+        let res = 
+            startQueue
+            <| create_dummy_logger
+        ()
