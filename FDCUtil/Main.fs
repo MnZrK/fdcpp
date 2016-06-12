@@ -81,6 +81,11 @@ module Result =
         | Failure x -> 
             x
 
+    let collect f m =
+        match m with
+        | Failure x -> Failure x
+        | Success x -> f x 
+
     type SuccessBuilder() =
         member this.Bind(m, f) = bindSuccess m f
         member this.Return(x) = Success x

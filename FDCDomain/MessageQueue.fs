@@ -27,6 +27,14 @@ type StringError =
 | MustNotBeShorterThan of int
 | CouldntConvert of Exception
 
+type TransportError =
+| CouldntConnect
+
+type ActionError =
+| InvalidState of string
+| InvalidAction of string
+| TransportError of TransportError
+
 type QueueError<'a> = 
 | CouldntConnect of 'a
 
@@ -167,7 +175,7 @@ module KeyData =
                 lockBytes.[index] ^^^ lockBytes.[index-1]
         ) 
         
-        key |> Array.map nibbleSwap |> Array.collect byteToDCN
+        key |> Array.map nibbleSwap |> Array.collect byteToDCN |> KeyData
 
     let fold f (KeyData b) = f b
 
@@ -254,59 +262,155 @@ type ITransport =
     inherit IDisposable 
     abstract Received: IEvent<DcppReceiveMessage>
     abstract Write: DcppSendMessage -> unit
+type CreateTransport = ConnectionInfo -> Result<ITransport, TransportError>
 
 type Dependencies = {
     transport: ITransport
 }
 
 // domain logic (functions)
-let dispatch_action (create_log: CreateLogger) action (state, deps) =
-    let log = create_log()
-    log.Trace "Dispatching action..." 
-    (state, deps) |> Success
+let internal validate_state (state, deps) =
+    match (state, deps) with
+    | NotConnected, _ -> 
+        Success ()
+    | _, None -> 
+        ActionError.InvalidState "We are connected but no connection-related functions are available" 
+        |> Failure
+    | _ -> 
+        Success ()
 
-let start_queue await_terminator (create_log: CreateLogger) connect_info =
+let internal dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
+    let log = create_log()
+    log.Trace "Dispatching action %A" action
+
+    validate_state (state, deps_maybe) 
+    |> Result.collect (fun _ ->
+        match action with
+        | SendMessage msg ->
+            match deps_maybe with
+            | None -> 
+                ActionError.InvalidAction "Trying to send message with no connect-related functions available" 
+                |> Failure
+            | Some deps ->
+                match msg with
+                | ValidateNick vn_msg ->
+                    match state with
+                    | LockAcquired (ci, lock_data) ->
+                        deps.transport.Write msg 
+                        (WaitingForAuth (ci, lock_data, vn_msg.nick), deps_maybe) |> Success  
+                    | _ -> 
+                        ActionError.InvalidAction "Trying to send nick when state is not LockAcquired"
+                        |> Failure
+                | MyPass mp_msg ->
+                    match state with
+                    | WaitingForAuth _ -> 
+                        deps.transport.Write msg
+                        (state, deps_maybe) |> Success
+                    | _ -> 
+                        ActionError.InvalidAction "Trying to send pass when state is not WaitingForAuth"
+                        |> Failure
+        | Connect ci ->
+            match state with
+            | NotConnected ->
+                let transport_result = create_transport ci
+                match transport_result with
+                | Failure e -> 
+                    ActionError.TransportError e |> Failure
+                | Success transport ->
+                    let deps' =
+                        match deps_maybe with
+                        | None -> { transport = transport }
+                        | Some deps -> { deps with transport = transport }
+
+                    (Connected ci, Some deps') |> Success
+            | _ -> 
+                ActionError.InvalidAction "Trying to connect when already connected" 
+                |> Failure
+        | ReceiveMessage msg ->
+            match msg with
+            | Lock l_msg ->
+                match state with
+                | Connected ci ->
+                    (LockAcquired (ci, l_msg.lock), deps_maybe) |> Success
+                | _ -> 
+                    ActionError.InvalidAction "Received lock when state is not `Connected`" 
+                    |> Failure
+            | Hello h_msg ->
+                match state with
+                | WaitingForAuth (ci, lock, nick) ->
+                    (LoggedIn (ci, lock, nick), deps_maybe) |> Success
+                | _ ->
+                    ActionError.InvalidAction "Received hello when state is not `WaitingForAuth`" 
+                    |> Failure
+
+    )
+    |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
+
+let internal handle_agent (create_log: CreateLogger) await_terminator connect_info (nick_data, pass_data) (agent: AgentWithComplexState.T<AgentAction, State*Dependencies option, 'c>) =
+    let log = create_log()
+
+    log.Trace "We are inside agent now!"
+
+    // data transformation for convenience
+    let full_state_events = agent.state_changed
+    let state_changed = 
+        agent.state_changed 
+        |> Event.map (fun ((state, _), (state', _)) ->
+            (state, state')
+        )
+        |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
+
+    // translating messages received from server to the agent
+    full_state_events 
+    |> Event.choose (
+        function
+        | (NotConnected, _), (Connected ci, Some deps) -> (ci, deps) |> Some
+        | _ -> None)
+    |>! Event.add (fun (ci, deps) -> log.Info "Connected to (%A)" ci) 
+    |> Event.add (fun (ci, deps) -> 
+        // TODO think about disposing event handling after reconnect ? 
+        deps.transport.Received
+        |>! Event.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
+        |> Event.add (fun dcpp_msg -> agent.post << ReceiveMessage <| dcpp_msg)
+    )
+
+    // when Connected -> LockAcquired : send nick
+    state_changed 
+    |> Event.choose (
+        function
+        | Connected _, LockAcquired (_, lock_data) -> Some lock_data
+        | _ -> None
+    )
+    |>! Event.add (fun lock_data -> log.Info "Acquired lock %A" lock_data)
+    |> Event.add (fun lock_data -> 
+        let send_nick_message = 
+            SendMessage <| ValidateNick {
+                key = KeyData.create lock_data
+                nick = nick_data
+            }  
+        agent.post send_nick_message
+    )
+
+    // connecting to the server
+    log.Info "Connecting to (%A)..." connect_info
+    let connectResult = agent.post_and_reply <| Connect connect_info
+
+    // waiting for external termination
+    match connectResult with
+    | Failure e ->
+        CouldntConnect e |> Failure
+    | Success actionResult -> 
+        await_terminator(agent) |> Async.RunSynchronously |> Success
+
+let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_dat) =
     let log = create_log()
     log.Info "Starting queue..."
     
-    let dispatch_action_applied = dispatch_action create_log
+    let dispatch_action_applied = dispatch_action create_log create_transport
+    let handle_agent_applied = handle_agent create_log await_terminator connect_info (nick_data, pass_dat)
 
     AgentWithComplexState.loop 
     <| (State.NotConnected, None) 
-    <| dispatch_action create_log
-    <| (fun agent -> 
-        log.Trace "We are inside agent now!"
-
-        let full_state_events = agent.state_changed
-        let state_changed = 
-            agent.state_changed 
-            |> Event.map (fun ((state, _), (state', _)) ->
-                (state, state')
-            )
-        
-        state_changed
-        |> Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
-
-        full_state_events 
-        |> Event.choose (
-            function
-            | ((NotConnected, _), (Connected ci, Some deps)) -> (ci, deps) |> Some
-            | _ -> None)
-        |> Event.add (fun (ci, deps) -> 
-            log.Info "Connected to (%A)" ci
-            
-            deps.transport.Received
-            |> Event.add (fun dcpp_msg -> 
-                log.Trace "Received message %A" dcpp_msg
-            )
-        )
-
-        log.Info "Connecting to (%A)..." connect_info
-        let connectResult = agent.post_and_reply <| Connect connect_info
-
-        match connectResult with
-        | Failure e ->
-            CouldntConnect e |> Failure
-        | Success actionResult -> 
-            await_terminator |> Async.RunSynchronously |> Success
-    )
+    <| dispatch_action_applied
+    <| handle_agent_applied
+    

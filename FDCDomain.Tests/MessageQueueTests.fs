@@ -107,11 +107,13 @@ module ``KeyData Tests`` =
             <@ 
                 input 
                 |> List.forall (fun (str, bytes) -> 
-                    Result.mapSuccess KeyData.create (LockData.create str) = Success bytes
+                    Result.mapSuccess KeyData.create (LockData.create str) = Success (KeyData.KeyData bytes)
                 )
             @>
 
 module ``startQueue Tests`` =
+    let timeout = 100
+
     let dummy_logger =
         let dummy_log fmt = 
             Printf.kprintf ignore fmt
@@ -130,19 +132,83 @@ module ``startQueue Tests`` =
             member __.Fatal fmt = dummy_log fmt
             member __.FatalException _ fmt = dummy_log fmt } 
 
+    let console_logger = 
+        let logEvent prefix fmt =
+            Printf.kprintf (fun s -> printfn "%s: %s" prefix s) fmt
+        let logEventException prefix (e:System.Exception) fmt =
+            Printf.kprintf (fun s -> printfn "%s: Exception %s: %s" prefix e.Message s) fmt
+    
+        { new ILogger with
+            member __.Trace fmt = logEvent "TRACE" fmt
+            member __.TraceException e fmt = logEventException "TRACE" e fmt
+            member __.Debug fmt = logEvent "DEBUG" fmt
+            member __.DebugException e fmt = logEventException "DEBUG" e fmt
+            member __.Info fmt = logEvent "INFO" fmt
+            member __.InfoException e fmt = logEventException "INFO" e fmt
+            member __.Warn fmt = logEvent "WARN" fmt
+            member __.WarnException e fmt = logEventException "WARN" e fmt
+            member __.Error fmt = logEvent "ERROR" fmt
+            member __.ErrorException e fmt = logEventException "ERROR" e fmt
+            member __.Fatal fmt = logEvent "FATAL" fmt
+            member __.FatalException e fmt = logEventException "FATAL" e fmt }
+
     let create_dummy_logger () = dummy_logger
 
     [<Fact>]
-    let ``Should start queue`` () =
+    let ``Should start queue and pass authentication`` () =
+        let create_dummy_transport_has_been_called = ref false
+        let write_has_been_called = ref false
+        let create_dummy_transport ievent connect_info =
+            create_dummy_transport_has_been_called := true
+            { new ITransport with
+                member __.Received = ievent
+                member __.Write (x) = write_has_been_called := true
+                member __.Dispose() = () } 
+            |> Success
+
+        let event = new Event<DcppReceiveMessage>() 
+    
         let connect_info = {
             host = HostnameData.create "localhost" |> Result.get
             port = PortData.create 411 |> Result.get
         }
+        let nick_data = NickData.create "MnZrKk" |> Result.get
+        let pass_data = NickData.create "dummypassword" |> Result.get
 
         let res = 
             start_queue
-            <| (async { do! Async.Sleep 1 })
             <| create_dummy_logger
+            <| create_dummy_transport event.Publish
+            <| (fun agent -> async {
+                do! Async.Sleep timeout
+                
+                test <@ !create_dummy_transport_has_been_called @>
+
+                let lock = LockData.create "123114141" |> Result.get
+
+                event.Trigger <| Lock {
+                    lock = lock
+                    pk = Pk.create "whatever" |> Result.get
+                }
+                do! Async.Sleep timeout
+
+                test <@ 
+                        let res, _ = agent.fetch() |> Result.get
+                        res = WaitingForAuth (connect_info, lock, nick_data)
+                    @>
+                test <@ !write_has_been_called @>
+
+                event.Trigger <| Hello {
+                    nick = nick_data
+                }
+                do! Async.Sleep timeout
+
+                test <@ 
+                        let res, _ = agent.fetch() |> Result.get
+                        res = LoggedIn (connect_info, lock, nick_data)
+                    @>
+            })
             <| connect_info
+            <| (nick_data, pass_data)
         
         test <@ Result.isSuccess res @>

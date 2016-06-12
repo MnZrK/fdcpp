@@ -19,13 +19,13 @@ let main argv =
     }
     let create_log () = (new Logger() :> ILogger)  
 
-    let res = 
-        start_queue
-        <| (async { do! Async.Sleep 5000 })
-        <| create_log
-        <| connect_info
+    // let res = 
+    //     start_queue
+    //     <| (async { do! Async.Sleep 5000 })
+    //     <| create_log
+    //     <| connect_info
 
-    res |> Result.mapFailure (fun e -> logger.Fatal "Could not start main queue: %A" e) |> ignore
+    // res |> Result.mapFailure (fun e -> logger.Fatal "Could not start main queue: %A" e) |> ignore
 
     logger.Info "Shutting down..."
         
