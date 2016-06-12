@@ -1,8 +1,10 @@
 // include Fake libs
 #r "./packages/FAKE/tools/FakeLib.dll"
+#r "./packages/FSharpLint/FSharpLint.FAKE.dll"
 
 open Fake
 open Fake.Testing
+open FSharpLint.FAKE
 
 // Directories
 let buildDir  = "./build/"
@@ -24,6 +26,10 @@ let version = "0.1"  // or retrieve from CI server
 Target "Clean" (fun _ ->
     CleanDirs [buildDir; deployDir]
 )
+
+Target "Lint" (fun _ ->
+    appReferences
+        |> Seq.iter (FSharpLint id))
 
 Target "Build" (fun _ ->
     MSBuildDebug buildDir "Build" appReferences

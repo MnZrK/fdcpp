@@ -6,3 +6,4 @@ nuget Xunit
 nuget xunit.runner.console
 nuget FsCheck.Xunit
 nuget unquote
+nuget FSharpLint

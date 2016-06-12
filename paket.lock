@@ -8,6 +8,7 @@ NUGET
       FsCheck (>= 2.5)
       xunit.extensibility.execution (>= 2.1 < 3.0)
     FSharp.Core (4.0.0.1)
+    FSharpLint (0.2.8)
     NLog (4.3.4)
     NLog.Config (4.3.4)
       NLog (>= 4.3.4)
