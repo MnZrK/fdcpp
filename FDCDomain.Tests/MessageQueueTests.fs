@@ -114,7 +114,7 @@ module ``KeyData Tests`` =
 module ``startQueue Tests`` =
     let dummy_logger =
         let dummy_log fmt = 
-            Printf.kprintf (fun s -> ()) fmt
+            Printf.kprintf ignore fmt
 
         { new ILogger with 
             member __.Trace fmt = dummy_log fmt
