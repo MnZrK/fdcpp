@@ -57,13 +57,13 @@ module ``Utilities Tests`` =
 
         let expected = "12$3"
 
-        test <@ DCNtoString input = Success expected @>
+        test <@ DCNtoString input = expected @>
 
     [<Fact>]
     let ``Should convert DCN back and worth without change`` () =
         let input = "12$3|\01235ffffaa"
 
-        test <@ "12$3|\01235ffffaa" |> stringToDCN |> Result.bind <| DCNtoString = Success "12$3|\01235ffffaa" @>
+        test <@ "12$3|\01235ffffaa" |> stringToDCN |> Result.map DCNtoString = Success "12$3|\01235ffffaa" @>
 
 module ``ASCIIString Tests`` =
     [<Fact>]

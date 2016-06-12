@@ -48,36 +48,26 @@ let stringToDCN (s: string) =
     |> Result.bind <| getStringL
 
 let DCNtoString (str: string) = 
-    Result.success_workflow {
-        let! str0uy = getString [|0uy|]
-        let! str5uy = getString [|5uy|]
-        let! str36uy = getString [|36uy|]
-        let! str96uy = getString [|96uy|]
-        let! str124uy = getString [|124uy|]
-        let! str126uy = getString [|126uy|]
+    let str0uy = getString [|0uy|] |> Result.get 
+    let str5uy = getString [|5uy|] |> Result.get
+    let str36uy = getString [|36uy|] |> Result.get
+    let str96uy = getString [|96uy|] |> Result.get
+    let str124uy = getString [|124uy|] |> Result.get
+    let str126uy = getString [|126uy|] |> Result.get
 
-        let matches = [
-            ("/%DCN000%/", str0uy);
-            ("/%DCN005%/", str5uy);
-            ("/%DCN036%/", str36uy);
-            ("/%DCN096%/", str96uy);
-            ("/%DCN124%/", str124uy);
-            ("/%DCN126%/", str126uy)            
-        ]
+    let matches = [
+        ("/%DCN000%/", str0uy);
+        ("/%DCN005%/", str5uy);
+        ("/%DCN036%/", str36uy);
+        ("/%DCN096%/", str96uy);
+        ("/%DCN124%/", str124uy);
+        ("/%DCN126%/", str126uy)            
+    ]
 
-        let res =
-            try
-                matches
-                |> List.fold (fun (res: string) (strFrom, strTo) ->
-                    res.Replace(strFrom, strTo)
-                ) str
-                |> Success
-            with ex -> 
-                ex
-                |> StringError.CouldntConvert 
-                |> Failure
-        return! res
-    }
+    matches
+    |> List.fold (fun (res: string) (strFrom, strTo) ->
+        res.Replace(strFrom, strTo)
+    ) str
 
 let mapNullString f (s: string) = 
     match s with
@@ -109,10 +99,7 @@ module ASCIIString =
 
     let fold f (ASCIIString s) = f s
 
-    let getBytes (ASCIIString s) = 
-        match getBytes s with
-        | Success bs -> bs
-        | _ -> failwith "Not possible to get here, ASCII string is always byteable"
+    let getBytes (ASCIIString s) = getBytes s |> Result.get
 
 module Pk = 
     type T = Pk of string
