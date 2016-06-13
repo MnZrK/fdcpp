@@ -4,22 +4,6 @@ open System
 
 open FDCUtil.Main
 
-// infrastructure interfaces
-type ILogger =
-    abstract Trace: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract TraceException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract Debug: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract DebugException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract Info: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract InfoException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract Warn: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract WarnException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract Error: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract ErrorException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract Fatal: fmt: Printf.StringFormat<'a, unit> -> 'a
-    abstract FatalException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-type CreateLogger = unit -> ILogger 
-
 // errors
 type StringError = 
 | Missing
@@ -131,12 +115,12 @@ module ASCIIString =
 
     let getBytes (ASCIIString s) = getBytes s |> Result.get
 
-module Pk = 
-    type T = Pk of string
+module PkData = 
+    type T = PkData of string
 
-    let create = mapNullString Pk
+    let create = mapNullString PkData
 
-    let fold f (Pk s) = f s 
+    let fold f (PkData s) = f s 
 
 module LockData =
     type T = LockData of ASCIIString.T
@@ -212,7 +196,7 @@ module PortData =
 // domain models
 type LockMessage = {
     lock: LockData.T
-    pk: Pk.T
+    pk: PkData.T
 }
 
 type HelloMessage = {
@@ -259,7 +243,21 @@ type State =
 | WaitingForPassAuth of ConnectionInfo * KeyData.T * NickData.T * PasswordData.T
 | LoggedIn           of ConnectionInfo * NickData.T
 
-// dont know how to name this section
+// infrastructure interfaces
+type ILogger =
+    abstract Trace: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract TraceException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Debug: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract DebugException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Info: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract InfoException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Warn: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract WarnException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Error: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract ErrorException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract Fatal: fmt: Printf.StringFormat<'a, unit> -> 'a
+    abstract FatalException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
+type CreateLogger = unit -> ILogger 
 type ITransport = 
     inherit IDisposable 
     abstract Received: IEvent<DcppReceiveMessage>
@@ -335,11 +333,10 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
                 deps_maybe
                 |> Result.fromOption <| DepsAreMissing
                 |> Result.map (fun deps ->
-                    let msg = {
+                    deps.transport.Write << DcppSendMessage.ValidateNick <| {
                         nick = nick'
                         key = key
                     } 
-                    deps.transport.Write (DcppSendMessage.ValidateNick msg)
                     WaitingForAuth (ci, key, nick')  
                 )
             | _ -> 

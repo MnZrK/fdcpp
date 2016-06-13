@@ -181,7 +181,7 @@ module ``startQueue Tests`` =
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
                 let key = KeyData.create lock
-                let pk = Pk.create "whatever" |> Result.get
+                let pk = PkData.create "whatever" |> Result.get
 
                 do! Async.Sleep timeout
                 
@@ -236,7 +236,7 @@ module ``startQueue Tests`` =
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
                 let key = KeyData.create lock
-                let pk = Pk.create "whatever" |> Result.get
+                let pk = PkData.create "whatever" |> Result.get
                 
                 do! Async.Sleep timeout
                 test <@ !create_dummy_transport_has_been_called @>
@@ -293,7 +293,7 @@ module ``startQueue Tests`` =
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
                 let key = KeyData.create lock
-                let pk = Pk.create "whatever" |> Result.get
+                let pk = PkData.create "whatever" |> Result.get
                 
                 do! Async.Sleep timeout
                 test <@ !create_dummy_transport_has_been_called @>
