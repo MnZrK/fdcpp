@@ -126,7 +126,8 @@ module LockData =
     type T = LockData of ASCIIString.T
 
     let create (input: string) =
-        ASCIIString.create input
+        input
+        |> ASCIIString.create
         |> Result.bind <| 
         (fun s ->
             let length = ASCIIString.fold String.length s

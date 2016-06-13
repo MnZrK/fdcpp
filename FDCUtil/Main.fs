@@ -91,15 +91,28 @@ module Result =
         | Success x -> f x 
 
     type SuccessBuilder() =
-        member this.Bind(m, f) = bindSuccess m f
-        member this.Return(x) = Success x
-        member this.ReturnFrom(x) = x
+        member __.Bind(m, f) = bindSuccess m f
+        member __.Return(x) = Success x
+        member __.ReturnFrom(x) = x
+    type SuccessWithStringFailureBuilder() =
+        let stringify (x: obj) =
+            match x with
+            | :? string as str -> str
+            | x -> sprintf "%A" x
+
+        member __.Bind(m, f) =
+            (m |> mapFailure stringify) 
+        >>= (f >> mapFailure stringify)
+        
+        member __.Return(x) = Success x
+        member __.ReturnFrom(x) = x |> mapFailure stringify 
     let success_workflow = new SuccessBuilder()
+    let success_workflow_with_string_failures = new SuccessWithStringFailureBuilder()
 
     type FailureBuilder() =
-        member this.Bind(m, f) = bindFailure m f
-        member this.Return(x) = Failure x
-        member this.ReturnFrom(x) = x
+        member __.Bind(m, f) = bindFailure m f
+        member __.Return(x) = Failure x
+        member __.ReturnFrom(x) = x
     let failure_workflow = new FailureBuilder()
 
 type ResultList<'a, 'b> = Result<'a, 'b> list
