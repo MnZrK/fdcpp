@@ -63,6 +63,9 @@ module TcpStreamClient =
         let write_agent = MailboxProcessor.Start((fun inbox -> 
             let rec loop () = async {
                 let! msg = inbox.Receive()
+                // this will throw some exceptions when cancelled and disconnected, 
+                //  but we don't care because they are silently swallowed
+                //  and completion of Received observable will trigger anyways
                 do! stream.WriteAsync(msg, 0, Array.length msg) |> Async.AwaitIAsyncResult |> Async.Ignore
                 return! loop()
             } 
