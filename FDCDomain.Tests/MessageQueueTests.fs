@@ -173,29 +173,27 @@ module ``startQueue Tests`` =
             port = PortData.create 411 |> Result.get
         }
         let nick_data = NickData.create "MnZrKk" |> Result.get
-        let pass_data = NickData.create "dummypassword" |> Result.get
 
         let res = 
             start_queue
             <| create_dummy_logger
             <| create_dummy_transport event.Publish
             <| (fun agent -> async {
+                let lock = LockData.create "123114141" |> Result.get
+                let key = KeyData.create lock
+                let pk = Pk.create "whatever" |> Result.get
+
                 do! Async.Sleep timeout
                 
                 test <@ !create_dummy_transport_has_been_called @>
 
-                let lock = LockData.create "123114141" |> Result.get
-
                 event.Trigger <| Lock {
                     lock = lock
-                    pk = Pk.create "whatever" |> Result.get
+                    pk = pk
                 }
                 do! Async.Sleep timeout
 
-                test <@ 
-                        let res, _ = agent.fetch() |> Result.get
-                        res = WaitingForAuth (connect_info, lock, nick_data)
-                    @>
+                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth (connect_info, key, nick_data) @>
                 test <@ !write_has_been_called @>
 
                 event.Trigger <| Hello {
@@ -203,12 +201,66 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ 
-                        let res, _ = agent.fetch() |> Result.get
-                        res = LoggedIn (connect_info, lock, nick_data)
-                    @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data) @>
             })
             <| connect_info
-            <| (nick_data, pass_data)
+            <| (nick_data, None)
+        
+        test <@ Result.isSuccess res @>
+
+    [<Fact>]
+    let ``Should start queue and pass authentication if first nick is denied`` () =
+        let create_dummy_transport_has_been_called = ref false
+        let write_has_been_called = ref 0
+        let create_dummy_transport ievent connect_info =
+            create_dummy_transport_has_been_called := true
+            { new ITransport with
+                member __.Received = ievent
+                member __.Write (x) = write_has_been_called := !write_has_been_called + 1
+                member __.Dispose() = () } 
+            |> Success
+
+        let event = new Event<DcppReceiveMessage>() 
+    
+        let connect_info = {
+            host = HostnameData.create "localhost" |> Result.get
+            port = PortData.create 411 |> Result.get
+        }
+        let nick_data = NickData.create "MnZrKk" |> Result.get
+        let nick_data' = NickData.create "MnZrKk1" |> Result.get
+
+        let res = 
+            start_queue
+            <| create_dummy_logger
+            <| create_dummy_transport event.Publish
+            <| (fun agent -> async {
+                let lock = LockData.create "123114141" |> Result.get
+                let key = KeyData.create lock
+                let pk = Pk.create "whatever" |> Result.get
+                
+                do! Async.Sleep timeout
+                test <@ !create_dummy_transport_has_been_called @>
+
+                event.Trigger <| Lock {
+                    lock = lock
+                    pk = pk
+                }
+                do! Async.Sleep timeout
+
+                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth (connect_info, key, nick_data) @>
+                test <@ !write_has_been_called = 1 @>
+                event.Trigger <| ValidateDenied
+                do! Async.Sleep timeout
+
+                test <@ !write_has_been_called = 2 @>
+                event.Trigger <| Hello {
+                    nick = nick_data'
+                }
+                do! Async.Sleep timeout
+
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data') @>
+            })
+            <| connect_info
+            <| (nick_data, None)
         
         test <@ Result.isSuccess res @>

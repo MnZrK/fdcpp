@@ -31,8 +31,9 @@ type TransportError =
 | CouldntConnect
 
 type ActionError =
-| InvalidState of string
-| InvalidAction of string
+| InvalidState 
+| InvalidAction
+| DepsAreMissing
 | TransportError of TransportError
 
 type QueueError<'a> = 
@@ -234,28 +235,29 @@ type ConnectionInfo = {
 
 // higher-order domain models
 type DcppReceiveMessage = 
-    | Lock of LockMessage
-    | ValidateDenied 
-    | GetPass
-    | BadPass
-    | Hello of HelloMessage
-    | LoggedIn
+| Lock of LockMessage
+| ValidateDenied 
+| GetPass
+| BadPass
+| Hello of HelloMessage
+| LoggedIn
 
 type DcppSendMessage = 
-    | ValidateNick of ValidateNickMessage
-    | MyPass of MyPassMessage
+| ValidateNick of ValidateNickMessage
+| MyPass of MyPassMessage
 
 type AgentAction =
-    | SendMessage of DcppSendMessage
-    | ReceiveMessage of DcppReceiveMessage
-    | Connect of ConnectionInfo
+| SendMessage of DcppSendMessage
+| Connect of ConnectionInfo
+| RetryNick of NickData.T
+| LoggedIn of NickData.T
 
 type State = 
 | NotConnected
-| Connected      of ConnectionInfo
-| LockAcquired   of ConnectionInfo * LockData.T 
-| WaitingForAuth of ConnectionInfo * LockData.T * NickData.T
-| LoggedIn       of ConnectionInfo * LockData.T * NickData.T
+| Connected          of ConnectionInfo
+| WaitingForAuth     of ConnectionInfo * KeyData.T * NickData.T
+| WaitingForPassAuth of ConnectionInfo * KeyData.T * NickData.T * PasswordData.T
+| LoggedIn           of ConnectionInfo * NickData.T
 
 // dont know how to name this section
 type ITransport = 
@@ -269,84 +271,94 @@ type Dependencies = {
 }
 
 // domain logic (functions)
-let internal validate_state (state, deps) =
+let private validate_state (state, deps) =
     match (state, deps) with
     | NotConnected, _ -> 
         Success ()
-    | _, None -> 
-        ActionError.InvalidState "We are connected but no connection-related functions are available" 
-        |> Failure
+    | _, None ->
+        Failure InvalidState
     | _ -> 
         Success ()
 
-let internal dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
+let private send_message (transport: ITransport) (msg: DcppSendMessage) state = 
+    match msg with
+    | ValidateNick vn_msg ->
+        match state with
+        | Connected ci ->
+            transport.Write msg 
+            WaitingForAuth (ci, vn_msg.key, vn_msg.nick) |> Success  
+        | _ -> 
+            Failure InvalidAction
+    | MyPass mp_msg ->
+        match state with
+        | WaitingForAuth (ci, key, nick) -> 
+            transport.Write msg
+            WaitingForPassAuth (ci, key, nick, mp_msg.password) |> Success
+        | _ -> 
+            Failure InvalidAction
+
+let private connect (create_transport: CreateTransport) connect_info state =
+    match state with
+    | NotConnected ->
+        create_transport connect_info
+        |> Result.mapFailure ActionError.TransportError
+        |> Result.mapSuccess (fun transport -> Connected connect_info, transport)
+    | _ -> 
+        Failure InvalidAction
+
+let private dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
     let log = create_log()
     log.Trace "Dispatching action %A" action
 
     validate_state (state, deps_maybe) 
     |> Result.collect (fun _ ->
         match action with
-        | SendMessage msg ->
-            match deps_maybe with
-            | None -> 
-                ActionError.InvalidAction "Trying to send message with no connect-related functions available" 
-                |> Failure
-            | Some deps ->
-                match msg with
-                | ValidateNick vn_msg ->
-                    match state with
-                    | LockAcquired (ci, lock_data) ->
-                        deps.transport.Write msg 
-                        (WaitingForAuth (ci, lock_data, vn_msg.nick), deps_maybe) |> Success  
-                    | _ -> 
-                        ActionError.InvalidAction "Trying to send nick when state is not LockAcquired"
-                        |> Failure
-                | MyPass mp_msg ->
-                    match state with
-                    | WaitingForAuth _ -> 
-                        deps.transport.Write msg
-                        (state, deps_maybe) |> Success
-                    | _ -> 
-                        ActionError.InvalidAction "Trying to send pass when state is not WaitingForAuth"
-                        |> Failure
-        | Connect ci ->
-            match state with
-            | NotConnected ->
-                let transport_result = create_transport ci
-                match transport_result with
-                | Failure e -> 
-                    ActionError.TransportError e |> Failure
-                | Success transport ->
-                    let deps' =
-                        match deps_maybe with
-                        | None -> { transport = transport }
-                        | Some deps -> { deps with transport = transport }
+        | AgentAction.SendMessage msg ->
+            deps_maybe
+            |> Result.fromOption <| DepsAreMissing
+            |> Result.collect (fun deps -> send_message deps.transport msg state)
+            |> Result.map (fun state' -> state', deps_maybe)
 
-                    (Connected ci, Some deps') |> Success
+        | AgentAction.Connect ci ->
+            connect create_transport ci state
+            |> Result.map (fun (state', transport) ->
+                let deps' = 
+                    match deps_maybe with
+                    | None -> { transport = transport }
+                    | Some deps -> { deps with transport = transport }
+                
+                state', Some deps'
+            )
+        | AgentAction.RetryNick nick' ->
+            match state with 
+            | WaitingForAuth (ci, key, nick) ->
+                deps_maybe
+                |> Result.fromOption <| DepsAreMissing
+                |> Result.map (fun deps ->
+                    let msg = {
+                        nick = nick'
+                        key = key
+                    } 
+                    deps.transport.Write (DcppSendMessage.ValidateNick msg)
+                    WaitingForAuth (ci, key, nick')  
+                )
             | _ -> 
-                ActionError.InvalidAction "Trying to connect when already connected" 
-                |> Failure
-        | ReceiveMessage msg ->
-            match msg with
-            | Lock l_msg ->
-                match state with
-                | Connected ci ->
-                    (LockAcquired (ci, l_msg.lock), deps_maybe) |> Success
-                | _ -> 
-                    ActionError.InvalidAction "Received lock when state is not `Connected`" 
-                    |> Failure
-            | Hello h_msg ->
-                match state with
-                | WaitingForAuth (ci, lock, nick) ->
-                    (LoggedIn (ci, lock, nick), deps_maybe) |> Success
-                | _ ->
-                    ActionError.InvalidAction "Received hello when state is not `WaitingForAuth`" 
-                    |> Failure
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
 
+        | AgentAction.LoggedIn nick ->
+            match state with
+            | WaitingForAuth (ci, key, nick)
+            | WaitingForPassAuth (ci, key, nick, _) ->
+                LoggedIn (ci, nick) |> Success
+            | _ -> 
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
     )
+    |> Result.mapFailure (fun e -> e, action, state)
     |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
 
-let internal handle_agent (create_log: CreateLogger) await_terminator connect_info (nick_data, pass_data) (agent: AgentWithComplexState.T<AgentAction, State*Dependencies option, 'c>) =
+let private handle_agent (create_log: CreateLogger) await_terminator connect_info (nick_data, pass_data_maybe) (agent: AgentWithComplexState.T<AgentAction, State*Dependencies option, 'c>) =
     let log = create_log()
 
     log.Trace "We are inside agent now!"
@@ -360,7 +372,7 @@ let internal handle_agent (create_log: CreateLogger) await_terminator connect_in
         )
         |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
 
-    // translating messages received from server to the agent
+    // handling received dcpp messages
     full_state_events 
     |> Event.choose (
         function
@@ -371,24 +383,31 @@ let internal handle_agent (create_log: CreateLogger) await_terminator connect_in
         // TODO think about disposing event handling after reconnect ? 
         deps.transport.Received
         |>! Event.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
-        |> Event.add (fun dcpp_msg -> agent.post << ReceiveMessage <| dcpp_msg)
-    )
-
-    // when Connected -> LockAcquired : send nick
-    state_changed 
-    |> Event.choose (
-        function
-        | Connected _, LockAcquired (_, lock_data) -> Some lock_data
-        | _ -> None
-    )
-    |>! Event.add (fun lock_data -> log.Info "Acquired lock %A" lock_data)
-    |> Event.add (fun lock_data -> 
-        let send_nick_message = 
-            SendMessage <| ValidateNick {
-                key = KeyData.create lock_data
-                nick = nick_data
-            }  
-        agent.post send_nick_message
+        |> Event.scan (fun nick dcpp_msg ->
+            match dcpp_msg with
+            | DcppReceiveMessage.Lock msg ->
+                agent.post << AgentAction.SendMessage << DcppSendMessage.ValidateNick <| {
+                    nick = nick_data
+                    key = KeyData.create msg.lock
+                }
+                nick
+            | DcppReceiveMessage.ValidateDenied ->
+                match nick |> NickData.fold (fun nick_str -> NickData.create (nick_str + "1")) with
+                | Success nick' ->
+                    agent.post << AgentAction.RetryNick <| nick'
+                    nick'
+                | Failure e ->
+                    log.Error "Could not create new nick from old nick %A" nick
+                    nick
+            | DcppReceiveMessage.Hello msg ->
+                if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
+                agent.post << AgentAction.LoggedIn <| msg.nick
+                nick
+            | msg -> 
+                log.Error "Support is not implemented for message %A" msg
+                nick
+        ) nick_data
+        |> ignore
     )
 
     // connecting to the server
@@ -402,12 +421,12 @@ let internal handle_agent (create_log: CreateLogger) await_terminator connect_in
     | Success actionResult -> 
         await_terminator(agent) |> Async.RunSynchronously |> Success
 
-let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_dat) =
+let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =
     let log = create_log()
     log.Info "Starting queue..."
     
     let dispatch_action_applied = dispatch_action create_log create_transport
-    let handle_agent_applied = handle_agent create_log await_terminator connect_info (nick_data, pass_dat)
+    let handle_agent_applied = handle_agent create_log await_terminator connect_info (nick_data, pass_data_maybe)
 
     AgentWithComplexState.loop 
     <| (State.NotConnected, None) 

@@ -7,6 +7,10 @@ type Result<'a, 'b> =
 | Success of 'a
 | Failure of 'b
 module Result =
+    let fromOption o e =
+        match o with 
+        | None -> Failure e
+        | Some x -> Success x
 
     // type Aggregated<'a, 'b> =
     // | Inner of 'a
