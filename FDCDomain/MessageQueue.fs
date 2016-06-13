@@ -403,6 +403,16 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
                 agent.post << AgentAction.LoggedIn <| msg.nick
                 nick
+            | DcppReceiveMessage.GetPass ->
+                match pass_data_maybe with
+                | None -> 
+                    // TODO terminate everything somehow ?
+                    log.Error "Server asks for password but we don't have any"
+                | Some pass_data ->
+                    agent.post << AgentAction.SendMessage << DcppSendMessage.MyPass <| {
+                        password = pass_data 
+                    }
+                nick
             | msg -> 
                 log.Error "Support is not implemented for message %A" msg
                 nick
