@@ -69,6 +69,16 @@ let ``Should call once and only once function produced by 'callable_once' even i
 
     test <@ !number_of_times_called = 1 @>
 
+module ``String Tests`` =
+    [<Fact>]
+    let ``Should split example strings`` () =
+        let res = List.ofSeq << (String.split "$$")
+
+        test <@ res "first$$second$$third" = ["first"; "second"; "third"] @>
+        test <@ res "first$$second$$third$$" = ["first"; "second"; "third"] @>
+        test <@ res "$$first$$second$$third" = [""; "first"; "second"; "third"] @>
+        test <@ res "$$first$$second$$third$$" = [""; "first"; "second"; "third"] @>
+
 module ``Result Tests`` =
     open Result
 
