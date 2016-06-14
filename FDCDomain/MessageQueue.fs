@@ -514,8 +514,8 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
     |> Event.add (fun (ci, deps) -> 
         // TODO think about disposing event handling after disconnect ? 
         deps.transport.Received
-        |>! Observable.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
         |> Control.Observable.scan (fun nick dcpp_msg ->
+            log.Trace "Received message %A" dcpp_msg
             match dcpp_msg with
             | Lock msg ->
                 agent.post << SendMessage << ValidateNick <| {
@@ -536,9 +536,14 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 nick'
             | Hello msg ->
                 if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
-                agent.post << AgentAction.LoggedIn <| msg.nick
-                agent.post << SendMessage <| Version
-                agent.post <| SendMyInfo
+                agent.post_and_reply << AgentAction.LoggedIn <| msg.nick
+                |> Result.map (fun _ -> 
+                    agent.post_and_reply << SendMessage <| Version
+                )
+                |> Result.map (fun _ -> 
+                    agent.post <| SendMyInfo
+                )
+                |> ignore
                 nick
             | GetPass ->
                 match pass_data_maybe with
