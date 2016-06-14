@@ -50,6 +50,7 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="App.config" />  
     <Compile Include="MainTests.fs" />
   </ItemGroup>
   <ItemGroup>
