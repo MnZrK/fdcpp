@@ -141,7 +141,7 @@ module ``startQueue Tests`` =
 
     //     test <@ false @>
 
-    let timeout = 100
+    let timeout = 500
 
     let dummy_logger =
         let dummy_log fmt = 
