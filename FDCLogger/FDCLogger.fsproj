@@ -13,7 +13,7 @@
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <TargetFrameworkProfile />
     <AutoGenerateBindingRedirects />
-    <TargetFSharpCoreVersion>4.3.1.0</TargetFSharpCoreVersion>
+    <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <DocumentationFile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -52,10 +52,16 @@
   <ItemGroup>
     <Content Include="NLog.config" />
     <Content Include="NLog.xsd" />
-    <Compile Include="ILogger.fs" />
     <Compile Include="ConsoleLogger.fs" />
     <Compile Include="NLogLogger.fs" />
     <Compile Include="Bootstrap.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FDCDomain\FDCDomain.fsproj">
+      <Name>FDCDomain</Name>
+      <Project>{e237e27e-9334-4b28-9155-2bfe8618fc1b}</Project>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <Choose>

@@ -1,8 +1,10 @@
 // include Fake libs
 #r "./packages/FAKE/tools/FakeLib.dll"
+#r "./packages/FSharpLint/FSharpLint.FAKE.dll"
 
 open Fake
 open Fake.Testing
+open FSharpLint.FAKE
 
 // Directories
 let buildDir  = "./build/"
@@ -25,6 +27,10 @@ Target "Clean" (fun _ ->
     CleanDirs [buildDir; deployDir]
 )
 
+Target "Lint" (fun _ ->
+    appReferences
+        |> Seq.iter (FSharpLint id))
+
 Target "Build" (fun _ ->
     MSBuildDebug buildDir "Build" appReferences
         |> Log "AppBuild-Output: "
@@ -37,7 +43,12 @@ Target "BuildTests" (fun _ ->
 
 Target "RunTests" (fun _ ->
     !! (buildDir @@ "*.Tests.dll") 
-    |> xUnit2 (fun p -> { p with HtmlOutputPath = Some (buildDir @@ "xunit.html") })
+    |> xUnit2 (fun p -> { p with Parallel = ParallelMode.All })
+)
+
+Target "RunTestsSequential" (fun _ ->
+    !! (buildDir @@ "*.Tests.dll") 
+    |> xUnit2 (fun p -> { p with Parallel = ParallelMode.NoParallelization })
 )
 
 Target "Deploy" (fun _ ->

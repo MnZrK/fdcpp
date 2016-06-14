@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FSharpLintSettings>
+    <Analysers>
+        <NameConventions>
+            <Rules>
+                <IdentifiersMustNotContainUnderscores>
+                    <Enabled>False</Enabled>
+                </IdentifiersMustNotContainUnderscores>
+                <RecordFieldNamesMustBePascalCase>
+                    <Enabled>False</Enabled>
+                </RecordFieldNamesMustBePascalCase>
+            </Rules>
+        </NameConventions>
+        <Typography>
+            <Rules>
+                <TrailingNewLineInFile>
+                    <Enabled>False</Enabled>
+                </TrailingNewLineInFile>
+                <TrailingWhitespaceOnLine>
+                    <Enabled>False</Enabled>
+                </TrailingWhitespaceOnLine>
+            </Rules>
+        </Typography>
+        <SourceLength>
+            <Rules>
+                <MaxLinesInLambdaFunction>
+                    <Enabled>False</Enabled>
+                </MaxLinesInLambdaFunction>
+            </Rules>
+        </SourceLength>
+    </Analysers>
+</FSharpLintSettings>

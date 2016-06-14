@@ -7,7 +7,6 @@ open FDCLogger
 open FDCNet
 open FDCNet.Util
 
-// TODO think about how to restrain transitions from certain states
 type State = 
 | NotConnected
 | Connected of Tcp.Client

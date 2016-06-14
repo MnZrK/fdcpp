@@ -1,6 +1,11 @@
 source https://www.nuget.org/api/v2/
+source https://ci.appveyor.com/nuget/fscheck
 nuget FAKE
 nuget NLog.Config
 nuget Xunit
 nuget xunit.runner.console
+nuget FsCheck.Xunit
 nuget unquote
+nuget FSharpLint
+nuget FSharp.Control.Reactive
+nuget Rx-PlatformServices

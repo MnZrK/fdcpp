@@ -2,6 +2,9 @@ module FDCLogger.NLogLogger
 
 open System
 
+// TODO move ILogger somewhere else and update references
+open FDCDomain.MessageQueue
+
 /// All initial initialization for the logger is done in the 
 /// static constructor, ie when the object of the class is 
 /// created for the first time. Static constructors are thread-safe
@@ -13,6 +16,7 @@ type Logger() =
             let consoleTarget = 
                 let y = new NLog.Targets.ColoredConsoleTarget()
                 y.Name <- "ColoredConsole"
+                y.Layout <- NLog.Layouts.SimpleLayout.FromString("${longdate}|${threadid}|${level:uppercase=true}|${logger}|${message}")
                 y
             let loggingConfig = 
                 let y = NLog.Config.LoggingConfiguration()

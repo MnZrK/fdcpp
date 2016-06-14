@@ -1,11 +1,13 @@
 module FDCLogger.ConsoleLogger
 
 open System
+// TODO move ILogger somewhere else and update references
+open FDCDomain.MessageQueue
 
 type Logger() = 
-    static let logEvent prefix fmt =
+    let logEvent prefix fmt =
         Printf.kprintf (fun s -> printfn "%s: %s" prefix s) fmt
-    static let logEventException prefix (e:Exception) fmt =
+    let logEventException prefix (e:Exception) fmt =
         Printf.kprintf (fun s -> printfn "%s: Exception %s: %s" prefix e.Message s) fmt
     
     member __.Trace fmt = logEvent "TRACE" fmt
