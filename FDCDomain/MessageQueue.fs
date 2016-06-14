@@ -252,6 +252,27 @@ type MyInfoMessage = {
     nick: NickData.T
 }
 
+type NickListMessage = {
+    nicks: NickData.T list
+}
+
+type QuitMessage = {
+    nick: NickData.T
+}
+
+type ChatMessageMessage = {
+    nick: NickData.T
+    message: string
+}
+
+type HubTopicMessage = {
+    topic: string
+}
+
+type HubNameMessage = {
+    name: string
+}
+
 type ConnectionInfo = {
     host: HostnameData.T
     port: PortData.T
@@ -264,8 +285,13 @@ type DcppReceiveMessage =
 | ValidateDenied 
 | GetPass
 | BadPass
-| Hello of HelloMessage
+| Hello of HelloMessage  //TODO change handler for Hello
 | LoggedIn
+| NickList of NickListMessage
+| Quit of QuitMessage
+| HubTopic of HubTopicMessage
+| HubName of HubNameMessage
+| ChatMessage of ChatMessageMessage
 
 type DcppSendMessage = 
 | ValidateNick of ValidateNickMessage
@@ -278,15 +304,17 @@ type AgentAction =
 | Connect of ConnectionInfo
 | SendMyInfo
 | RetryNick of NickData.T
-| LoggedIn of NickData.T
+| Helloed of NickData.T
 | Disconnected
+| NickListed of NickData.T list
+| Quitted of NickData.T
 
 type State = 
 | NotConnected
 | Connected          of ConnectionInfo
 | WaitingForAuth     of ConnectionInfo * KeyData.T * NickData.T
 | WaitingForPassAuth of ConnectionInfo * KeyData.T * NickData.T * PasswordData.T
-| LoggedIn           of ConnectionInfo * NickData.T
+| LoggedIn           of ConnectionInfo * NickData.T * NickData.T list  
 
 // infrastructure interfaces
 type ILogger =
@@ -321,6 +349,9 @@ let DCNstring_to_DcppMessage input =
         | Regex "^\$Hello (.*)\|$" [ nick ] ->
             let! nick_data = NickData.create nick
             return Hello { nick = nick_data }
+        | Regex "^\$Quit (.*)\|$" [ nick ] ->
+            let! nick_data = NickData.create nick
+            return Quit { nick = nick_data }            
         | Regex "^\$BadPass\|$" [] -> 
             return BadPass
         | Regex "^\$GetPass\|$" [] -> 
@@ -334,6 +365,31 @@ let DCNstring_to_DcppMessage input =
                 lock = lock_data
                 pk = pk_data 
             } 
+        | Regex "^\$NickList (.*)\$\$\|$" [ nicklist_str ] ->
+            let nicks =
+                nicklist_str
+                |> String.split "$$"
+                |> Seq.map NickData.create
+                |> Seq.choose (Result.fold Some (ct None))
+                |> List.ofSeq
+            
+            return NickList {
+                nicks = nicks
+            }
+        | Regex "^\$HubTopic (.*)\|$" [topic] ->
+            return HubTopic { 
+                topic = topic
+            }
+        | Regex "^\$HubName (.*)\|$" [hubname] ->
+            return HubName { 
+                name = hubname
+            }            
+        | Regex "^\<(.*?)\>\s((\s|.)*)\|$" [nick_str; message; _] ->
+            let! nick = NickData.create nick_str
+            return ChatMessage {
+                nick = nick
+                message = message
+            }
         | _ -> 
             return! Failure "Couldn't parse"
     }
@@ -399,14 +455,14 @@ let private send_message (transport: ITransport) (msg: DcppSendMessage) state =
             Failure InvalidAction
     | MyInfo mi_msg ->
         match state with
-        | LoggedIn (ci, nick) ->
+        | LoggedIn _ ->
             transport.Write msg 
             state |> Success
         | _ ->
             Failure InvalidAction
     | Version ->
         match state with
-        | LoggedIn (ci, nick) ->
+        | LoggedIn _ ->
             transport.Write msg
             state |> Success
         | _ ->
@@ -436,7 +492,7 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
 
         | AgentAction.SendMyInfo ->
             match state with 
-            | LoggedIn (ci, nick) ->
+            | LoggedIn (_, nick, _) ->
                 let msg = DcppSendMessage.MyInfo {nick = nick}
 
                 deps_maybe
@@ -472,14 +528,37 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
 
-        | AgentAction.LoggedIn nick ->
+        | AgentAction.Helloed nick' ->
             match state with
             | WaitingForAuth (ci, key, nick)
             | WaitingForPassAuth (ci, key, nick, _) ->
-                LoggedIn (ci, nick) |> Success
+                if nick' = nick then
+                    LoggedIn (ci, nick, []) |> Success
+                else
+                    // ignoring not "ours" Hello messages 
+                    state |> Success
+            | LoggedIn (ci, nick, nicks) ->
+                LoggedIn (ci, nick, nick'::nicks) |> Success //TODO change nick list to some other data structure, like ResizeArray may be
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
+
+        | AgentAction.Quitted nick' ->
+            match state with
+            | LoggedIn (ci, nick, nicks) ->
+                let nicks' = List.filter ((<>) nick') nicks //TODO OMG THAT MUST BE SLOW
+                LoggedIn (ci, nick, nicks') |> Success
+            | _ -> 
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
+        | AgentAction.NickListed nicks' ->
+            match state with
+            | LoggedIn (ci, nick, nicks) ->
+                LoggedIn (ci, nick, nicks') |> Success
+            | _ -> 
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
+
         | AgentAction.Disconnected ->
             deps_maybe
             |> Option.map (fun deps -> deps.transport.Dispose())
@@ -535,15 +614,10 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                     |> Result.fold id (ct nick)  
                 nick'
             | Hello msg ->
-                if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
-                agent.post_and_reply << AgentAction.LoggedIn <| msg.nick
-                |> Result.map (fun _ -> 
-                    agent.post_and_reply << SendMessage <| Version
-                )
-                |> Result.map (fun _ -> 
-                    agent.post <| SendMyInfo
-                )
-                |> ignore
+                agent.post << Helloed <| msg.nick
+                nick
+            | Quit msg ->
+                agent.post << Quitted <| msg.nick
                 nick
             | GetPass ->
                 match pass_data_maybe with
@@ -560,7 +634,19 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 agent.post AgentAction.Disconnected
                 nick
             | DcppReceiveMessage.LoggedIn ->
-                // FUTURE it is related to Op users, we dont care about them for a moment
+                // WILL it is related to Op users, we dont care about them for a moment
+                nick
+            | ChatMessage msg ->
+                log.Trace "Chat message from %A: %s" msg.nick msg.message
+                nick
+            | HubTopic msg ->
+                log.Info "Hub topic: %s" msg.topic
+                nick
+            | HubName msg ->
+                log.Info "Hub name: %s" msg.name
+                nick
+            | NickList msg ->
+                agent.post <| NickListed msg.nicks
                 nick
         ) nick_data
         |> Observable.subscribeWithCompletion ignore (fun () -> 
@@ -572,7 +658,13 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
 
     state_changed |> Event.add (
         function
-        | _, LoggedIn (ci, nick) -> log.Info "Successfully logged in as %A" nick
+        | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn (ci, nick, nicks) -> 
+            log.Info "Successfully logged in as %A" nick
+            agent.post_and_reply << SendMessage <| Version
+            |> Result.bind <| (fun _ -> agent.post_and_reply <| SendMyInfo)
+            |>! Result.mapFailure (fun e -> log.Error "Couldn't finish login: %A" e)
+            |> ignore
+
         | _ -> ()
     )
 

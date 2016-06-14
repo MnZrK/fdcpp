@@ -230,7 +230,7 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data) @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data, []) @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -287,7 +287,7 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data') @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data', []) @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -345,7 +345,7 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data) @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data, []) @>
             })
             <| connect_info
             <| (nick_data, Some pass_data)
@@ -362,3 +362,43 @@ module ``infrastructure Tests`` =
             lock = LockData.create "EXTENDEDPROTOCOLL\98W0q0:gmyMHSWL1qN4>v9YkYwg6" |> Result.get
             pk = PkData.create "PtokaX" |> Result.get
         }) @> 
+
+    [<Fact>]
+    let ``Should convert example NickList message`` () =
+        let input = "$NickList PtokaX$$TestUser$$MnZrK$$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (NickList {
+            nicks = [ "PtokaX"; "TestUser"; "MnZrK"] |> List.map (NickData.create >> Result.get)
+        }) @> 
+
+    [<Fact>]
+    let ``Should convert example ChatMessage message`` () =
+        let input = "<Baloo> Hello! (= |"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (ChatMessage {
+            nick = NickData.create "Baloo" |> Result.get
+            message = "Hello! (= " 
+        }) @> 
+        
+    [<Fact>]
+    let ``Should convert ChatMessage message with newlines and tabs`` () =
+        let input = "<Baloo> Hello! (= \n qwer \t asdf|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (ChatMessage {
+            nick = NickData.create "Baloo" |> Result.get
+            message = "Hello! (= \n qwer \t asdf" 
+        }) @> 
+        
+    [<Fact>]
+    let ``Should convert another ChatMessage example`` () =
+        let input = "<Baloo>\nHello! (= \n qwer \t asdf|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (ChatMessage {
+            nick = NickData.create "Baloo" |> Result.get
+            message = "Hello! (= \n qwer \t asdf" 
+        }) @> 
+                
