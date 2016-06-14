@@ -1,5 +1,21 @@
 module FDCUtil.Main
 
+let ct a _ = a
+
+let callable_once fn =
+    let lazyf = lazy (fn())
+    fun () -> lazyf.Value
+
+    // let executed = ref false
+    // (fun () ->
+    //     if not !executed then
+    //         lock executed (fun () ->
+    //             if not !executed then
+    //                 executed := true
+    //                 fn()
+    //         ) 
+    //     )
+
 let tee fn x = x |> fn |> ignore; x
 let ( |>! ) x fn = tee fn x
 
@@ -11,6 +27,10 @@ module Result =
         match o with 
         | None -> Failure e
         | Some x -> Success x
+    let toOption r =
+        match r with
+        | Failure _ -> None
+        | Success x -> Some x
 
     // type Aggregated<'a, 'b> =
     // | Inner of 'a
@@ -172,6 +192,11 @@ module AgentWithComplexState =
         fetch: unit -> Result<'state, FetchError>
     }
 
+    let fire_event (event: Event<'a>) x = 
+        Tasks.Task.Run(fun () -> event.Trigger(x)) // are we sure it will never-ever block our thread?
+
+    let fire_and_forget_event event x = fire_event event x |> ignore 
+
     let internal _create (state, deps) f =
         let state_changed = new Event<('state*'deps) * ('state*'deps)>()
 
@@ -184,13 +209,12 @@ module AgentWithComplexState =
                 with
                 | _ -> None
 
-                    
             match fResult with
             | Some (acc_state', acc_deps') ->
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
-                    state_changed.Trigger((full_state, full_state'))
+                    fire_and_forget_event state_changed ((full_state, full_state'))
                 (acc_state', acc_deps')
             | _ ->
                 // swallow the error ... nowhere to return it
@@ -207,7 +231,7 @@ module AgentWithComplexState =
                 with
                 | ex ->
                     ReplyError.ActionException ex |> Failure
-
+                    
             replyChannel.Reply(fResult)
 
             match fResult with
@@ -215,7 +239,7 @@ module AgentWithComplexState =
                 if (acc_state' <> acc_state) then
                     let full_state = acc_state, acc_deps
                     let full_state' = acc_state', acc_deps'
-                    state_changed.Trigger((full_state, full_state'))
+                    fire_and_forget_event state_changed ((full_state, full_state'))
                 (acc_state', acc_deps')
             | _ ->
                 (acc_state, acc_deps)
@@ -223,7 +247,7 @@ module AgentWithComplexState =
         let agent = MailboxProcessor.Start(fun inbox -> 
             let rec loop (acc_state, acc_deps) = async {
                 let! agent_message = inbox.Receive()
-                
+
                 match agent_message with
                 | Post x -> 
                     return! loop (process_post x (acc_state, acc_deps))
@@ -241,8 +265,10 @@ module AgentWithComplexState =
 
         let post = Post >> agent.Post
         let post_and_reply x = 
+            
             let wait = agent.PostAndAsyncReply(fun reply -> PostAndReply (x, reply))
             let task = Async.StartAsTask(wait, cancellationToken = stopped.Token)
+            
             let res = 
                 try
                     Async.AwaitTask task |> Async.RunSynchronously

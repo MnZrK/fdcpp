@@ -60,7 +60,7 @@
       <Project>{ffc051a3-eb26-4394-beb7-c2d840148ea0}</Project>
       <Private>True</Private>
     </ProjectReference>
-    <!--<ProjectReference Include="..\FDCDomain\FDCDomain.fsproj">
+    <ProjectReference Include="..\FDCDomain\FDCDomain.fsproj">
       <Name>FDCDomain</Name>
       <Project>{e237e27e-9334-4b28-9155-2bfe8618fc1b}</Project>
       <Private>True</Private>
@@ -69,7 +69,7 @@
       <Name>FDCLogger</Name>
       <Project>{bb095df8-6532-4c79-9ed2-f7dfa1f6229a}</Project>
       <Private>True</Private>
-    </ProjectReference>-->
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <Choose>

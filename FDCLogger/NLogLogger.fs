@@ -16,6 +16,7 @@ type Logger() =
             let consoleTarget = 
                 let y = new NLog.Targets.ColoredConsoleTarget()
                 y.Name <- "ColoredConsole"
+                y.Layout <- NLog.Layouts.SimpleLayout.FromString("${longdate}|${threadid}|${level:uppercase=true}|${logger}|${message}")
                 y
             let loggingConfig = 
                 let y = NLog.Config.LoggingConfiguration()

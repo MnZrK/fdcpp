@@ -1,5 +1,10 @@
 module FDCUtil.Tests.Main
 
+open System
+open System.Threading
+open System.Threading.Tasks
+open System.Reactive.Concurrency
+
 open Xunit
 open Swensen.Unquote
 open FsCheck
@@ -10,7 +15,59 @@ open FDCTestHelper.FsCheckExtensions
 
 open FDCUtil.Main
 
-open System.Threading
+[<Fact>]
+let ``Should call once and only once function produced by 'callable_once'`` () =
+    let number_of_times_called = ref 0
+
+    let testfun () = 
+        number_of_times_called := !number_of_times_called + 1
+
+    testfun()
+    test <@ !number_of_times_called = 1 @>
+    testfun()
+    test <@ !number_of_times_called = 2 @>
+
+    let oncefun = callable_once testfun
+
+    oncefun()
+    test <@ !number_of_times_called = 3 @>
+    oncefun()
+    test <@ !number_of_times_called = 3 @>
+
+    testfun()
+    test <@ !number_of_times_called = 4 @>
+
+    oncefun()
+    test <@ !number_of_times_called = 4 @>
+
+[<Fact>]
+let ``Should call once and only once function produced by 'callable_once' even in parallel`` () =
+    let number_of_times_called = ref 0
+
+    let testfun () = 
+        Thread.Sleep(100)
+        lock number_of_times_called (fun () -> number_of_times_called := !number_of_times_called + 1)
+
+    let oncefun = callable_once testfun
+
+    let callfun () =
+        oncefun()
+        oncefun()
+        oncefun()
+        oncefun()
+        oncefun()
+        oncefun()     
+
+    let scheduler = NewThreadScheduler.Default
+
+    use disposable1 = scheduler.Schedule(callfun)
+    use disposable2 = scheduler.Schedule(callfun)
+    use disposable3 = scheduler.Schedule(callfun)
+    use disposable4 = scheduler.Schedule(callfun)
+
+    Thread.Sleep(200)
+
+    test <@ !number_of_times_called = 1 @>
 
 module ``Result Tests`` =
     open Result

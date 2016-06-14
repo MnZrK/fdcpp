@@ -1,9 +1,12 @@
 module FDCDomain.MessageQueue.Tests
 
+open System
+
 open Xunit
 open Swensen.Unquote
 
 open FDCUtil.Main
+open FDCUtil.Main.Regex
 open FDCDomain.MessageQueue
 
 module ``Utilities Tests`` = 
@@ -112,6 +115,32 @@ module ``KeyData Tests`` =
             @>
 
 module ``startQueue Tests`` =
+    // [<Fact>]
+    // let ``Should trigger IObservable from IEvent`` () =
+    //     let event = new Event<int>()
+
+    //     let create_observable ievent: IObservable<int> = ievent
+
+    //     let observable: IObservable<int> = create_observable event.Publish 
+    //     observable |> Observable.add (fun x -> printfn "Got %A" x)
+
+    //     event.Trigger(10)
+
+    //     test <@ true @>
+
+    // [<Fact>]
+    // let ``Should scan IObservable from IEvent`` () =
+    //     let event = new Event<int>()
+
+    //     let create_observable ievent: IObservable<int> = ievent
+
+    //     let observable: IObservable<int> = create_observable event.Publish 
+    //     observable |> Observable.scan (fun state x -> printfn "Got %A" x; state) 10 |> Observable.add ignore
+
+    //     event.Trigger(10)
+
+    //     test <@ false @>
+
     let timeout = 100
 
     let dummy_logger =
@@ -177,7 +206,7 @@ module ``startQueue Tests`` =
         let res = 
             start_queue
             <| create_dummy_logger
-            <| create_dummy_transport event.Publish
+            <| create_dummy_transport event.Publish 
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
                 let key = KeyData.create lock
@@ -322,3 +351,14 @@ module ``startQueue Tests`` =
             <| (nick_data, Some pass_data)
         
         test <@ Result.isSuccess res @>
+
+module ``infrastructure Tests`` =
+    [<Fact>]
+    let ``Should convert example Lock message`` () =
+        let input = "$Lock EXTENDEDPROTOCOLL\98W0q0:gmyMHSWL1qN4>v9YkYwg6 Pk=PtokaX|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (Lock {
+            lock = LockData.create "EXTENDEDPROTOCOLL\98W0q0:gmyMHSWL1qN4>v9YkYwg6" |> Result.get
+            pk = PkData.create "PtokaX" |> Result.get
+        }) @> 

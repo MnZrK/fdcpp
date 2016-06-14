@@ -3,6 +3,9 @@ module FDCDomain.MessageQueue
 open System
 
 open FDCUtil.Main
+open FDCUtil.Main.Regex
+
+open FSharp.Control.Reactive
 
 // errors
 type StringError = 
@@ -12,7 +15,7 @@ type StringError =
 | CouldntConvert of Exception
 
 type TransportError =
-| CouldntConnect
+| CouldntConnect of string
 
 type ActionError =
 | InvalidState 
@@ -112,6 +115,7 @@ module ASCIIString =
                 Failure StringError.NotASCIIString
 
     let fold f (ASCIIString s) = f s
+    let unwrap (ASCIIString s) = s
 
     let getBytes (ASCIIString s) = getBytes s |> Result.get
 
@@ -140,11 +144,12 @@ module LockData =
     let fold f (LockData s) = f s
 
 module NickData = 
-    type T = NickData of string
+    type T = NickData of ASCIIString.T
 
-    let create = mapNullString NickData
+    let create = (Result.map NickData) << ASCIIString.create
 
     let fold f (NickData s) = f s
+    let unwrap (NickData s) = s
 
 module KeyData = 
     type T = KeyData of byte[]
@@ -164,14 +169,19 @@ module KeyData =
         key |> Array.map nibbleSwap |> Array.collect byteToDCN |> KeyData
 
     let fold f (KeyData b) = f b
+    let unwrap (KeyData b) = b
 
 module PasswordData =
-    type T = PasswordData of string
+    type T = PasswordData of ASCIIString.T
 
-    let create = mapNullString PasswordData
+    let create = (Result.map PasswordData) << ASCIIString.create
 
     let fold f (PasswordData p) = f p
+    let unwrap (PasswordData p) = p
 
+    let getBytes (PasswordData pass) = 
+        getBytes |> ASCIIString.fold <| pass 
+        |> Result.get
 module HostnameData =
     type T = HostnameData of string
 
@@ -236,6 +246,7 @@ type AgentAction =
 | Connect of ConnectionInfo
 | RetryNick of NickData.T
 | LoggedIn of NickData.T
+| Disconnected
 
 type State = 
 | NotConnected
@@ -261,13 +272,60 @@ type ILogger =
 type CreateLogger = unit -> ILogger 
 type ITransport = 
     inherit IDisposable 
-    abstract Received: IEvent<DcppReceiveMessage>
+    abstract Received: IObservable<DcppReceiveMessage>
     abstract Write: DcppSendMessage -> unit
 type CreateTransport = ConnectionInfo -> Result<ITransport, TransportError>
 
 type Dependencies = {
     transport: ITransport
 }
+
+// infrastructure functions 
+
+let DCNstring_to_DcppMessage input =
+    Result.success_workflow_with_string_failures {
+        match input with
+        | Regex "^\$Hello (.*)\|$" [ nick ] ->
+            let! nick_data = NickData.create nick
+            return Hello { nick = nick_data }
+        | Regex "^\$BadPass\|$" [] -> 
+            return BadPass
+        | Regex "^\$GetPass\|$" [] -> 
+            return GetPass
+        | Regex "^\$ValidateDenide\|$" [] -> 
+            return ValidateDenied
+        | Regex "^\$Lock (.*) Pk=(.*)\|$" [ lock; pk ] ->
+            let! lock_data = LockData.create << DCNtoString <| lock
+            let! pk_data = PkData.create pk // TODO check for what fields DCN encoding/decoding should be happening 
+            return Lock {
+                lock = lock_data
+                pk = pk_data 
+            } 
+        | _ -> 
+            return! Failure "Couldn't parse"
+    }
+    |> Result.mapFailure (fun e -> e, input)
+
+let DcppMessage_to_bytes dcpp_message = 
+    match dcpp_message with
+    | DcppSendMessage.MyPass mp_msg -> 
+        [
+            "$MyPass " |> getBytes |> Result.get;
+            PasswordData.fold ASCIIString.getBytes mp_msg.password;
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+
+    | DcppSendMessage.ValidateNick vn_msg ->
+        [ 
+            "$Key " |> getBytes |> Result.get;
+            KeyData.unwrap vn_msg.key;
+            "|$ValidateNick " |> getBytes |> Result.get;
+            NickData.fold ASCIIString.getBytes vn_msg.nick;
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+
 
 // domain logic (functions)
 let private validate_state (state, deps) =
@@ -352,6 +410,12 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
+        | AgentAction.Disconnected ->
+            deps_maybe
+            |> Option.map (fun deps -> deps.transport.Dispose())
+            |> ignore
+
+            (NotConnected, None) |> Success
     )
     |> Result.mapFailure (fun e -> e, action, state)
     |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
@@ -378,10 +442,10 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
         | _ -> None)
     |>! Event.add (fun (ci, deps) -> log.Info "Connected to (%A)" ci) 
     |> Event.add (fun (ci, deps) -> 
-        // TODO think about disposing event handling after reconnect ? 
+        // TODO think about disposing event handling after disconnect ? 
         deps.transport.Received
-        |>! Event.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
-        |> Event.scan (fun nick dcpp_msg ->
+        |>! Observable.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
+        |> Control.Observable.scan (fun nick dcpp_msg ->
             match dcpp_msg with
             | DcppReceiveMessage.Lock msg ->
                 agent.post << AgentAction.SendMessage << DcppSendMessage.ValidateNick <| {
@@ -390,13 +454,16 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 }
                 nick
             | DcppReceiveMessage.ValidateDenied ->
-                match nick |> NickData.fold (fun nick_str -> NickData.create (nick_str + "1")) with
-                | Success nick' ->
-                    agent.post << AgentAction.RetryNick <| nick'
-                    nick'
-                | Failure e ->
-                    log.Error "Could not create new nick from old nick %A" nick
+                let nick' = 
                     nick
+                    |> NickData.unwrap
+                    |> ASCIIString.unwrap
+                    |> (+) <| "1"
+                    |> NickData.create 
+                    |>! Result.mapFailure (fun e -> log.Error "Could not create new nick from old nick %A: %A" nick e)
+                    |>! Result.map (fun nick' -> agent.post << AgentAction.RetryNick <| nick') 
+                    |> Result.fold id (ct nick)  
+                nick'
             | DcppReceiveMessage.Hello msg ->
                 if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
                 agent.post << AgentAction.LoggedIn <| msg.nick
@@ -415,6 +482,31 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 log.Error "Support is not implemented for message %A" msg
                 nick
         ) nick_data
+        |> Observable.subscribeWithCompletion ignore (fun () -> 
+            log.Error "Disconnected"
+            agent.post AgentAction.Disconnected
+        )
+        |> ignore
+    )
+
+    state_changed |> Event.add (
+        function
+        | _, LoggedIn (ci, nick) -> log.Info "Successfully logged in as %A" nick
+        | _ -> ()
+    )
+
+    // handling reconnection
+    state_changed 
+    |> Event.filter (
+        function
+        | _, NotConnected -> true
+        | _ -> false)
+    |> Event.add (fun _ ->
+        log.Info "Disconnected" 
+        log.Info "Connecting to (%A)..." connect_info
+        agent.post_and_reply <| Connect connect_info
+        |> Result.mapFailure (log.Error "Couldnt connect %A")
+        |> Result.map (log.Info "Reconnected %A")
         |> ignore
     )
 
@@ -427,7 +519,14 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
     | Failure e ->
         CouldntConnect e |> Failure
     | Success actionResult -> 
-        await_terminator(agent) |> Async.RunSynchronously |> Success
+        let res = await_terminator(agent) |> Async.RunSynchronously |> Success
+
+        agent.fetch()
+        |> Result.map snd
+        |> Result.map (Option.map (fun deps -> deps.transport.Dispose()))
+        |> ignore
+
+        res
 
 let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =
     let log = create_log()
