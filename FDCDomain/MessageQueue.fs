@@ -11,6 +11,7 @@ open FSharp.Control.Reactive
 type StringError = 
 | Missing
 | NotASCIIString
+| IncludesForbiddenCharacter of char
 | MustNotBeShorterThan of int
 | CouldntConvert of Exception
 
@@ -146,7 +147,19 @@ module LockData =
 module NickData = 
     type T = NickData of ASCIIString.T
 
-    let create = (Result.map NickData) << ASCIIString.create
+    let create (str: string) =
+        let forbidden_chars = ['|'; '$'; ' ']
+        
+        let canonicalized = System.Text.RegularExpressions.Regex.Replace(str,"\s"," ").Trim()
+
+        let forbidden = forbidden_chars |> List.tryFind (fun c -> canonicalized.IndexOf(string c) >= 0)
+        
+        match forbidden with
+        | Some c -> StringError.IncludesForbiddenCharacter c |> Failure
+        | None ->  
+            canonicalized
+            |> ASCIIString.create
+            |> Result.map NickData
 
     let fold f (NickData s) = f s
     let unwrap (NickData s) = s
@@ -174,7 +187,19 @@ module KeyData =
 module PasswordData =
     type T = PasswordData of ASCIIString.T
 
-    let create = (Result.map PasswordData) << ASCIIString.create
+    let create (str: string) =
+        let forbidden_chars = ['|'; '$'; ' ']
+        
+        let canonicalized = System.Text.RegularExpressions.Regex.Replace(str,"\s"," ").Trim()
+
+        let forbidden = forbidden_chars |> List.tryFind (fun c -> canonicalized.IndexOf(string c) >= 0)
+        
+        match forbidden with
+        | Some c -> StringError.IncludesForbiddenCharacter c |> Failure
+        | None ->  
+            canonicalized
+            |> ASCIIString.create
+            |> Result.map PasswordData
 
     let fold f (PasswordData p) = f p
     let unwrap (PasswordData p) = p
@@ -223,10 +248,15 @@ type MyPassMessage = {
     password: PasswordData.T
 }
 
+type MyInfoMessage = {
+    nick: NickData.T
+}
+
 type ConnectionInfo = {
     host: HostnameData.T
     port: PortData.T
 }
+
 
 // higher-order domain models
 type DcppReceiveMessage = 
@@ -240,10 +270,13 @@ type DcppReceiveMessage =
 type DcppSendMessage = 
 | ValidateNick of ValidateNickMessage
 | MyPass of MyPassMessage
+| Version
+| MyInfo of MyInfoMessage
 
 type AgentAction =
 | SendMessage of DcppSendMessage
 | Connect of ConnectionInfo
+| SendMyInfo
 | RetryNick of NickData.T
 | LoggedIn of NickData.T
 | Disconnected
@@ -325,7 +358,18 @@ let DcppMessage_to_bytes dcpp_message =
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
-
+    | DcppSendMessage.Version ->
+        "$Version 1.0091|" |> getBytes |> Result.get
+    | DcppSendMessage.MyInfo mi_msg ->
+        [
+            "$MyINFO $ALL " |> getBytes |> Result.get;
+            NickData.fold ASCIIString.getBytes mi_msg.nick;
+            " $ $" |> getBytes |> Result.get;
+            [|0x35uy; 0x30uy; 0x01uy|];
+            "$$0$" |> getBytes |> Result.get;
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
 
 // domain logic (functions)
 let private validate_state (state, deps) =
@@ -353,6 +397,20 @@ let private send_message (transport: ITransport) (msg: DcppSendMessage) state =
             WaitingForPassAuth (ci, key, nick, mp_msg.password) |> Success
         | _ -> 
             Failure InvalidAction
+    | MyInfo mi_msg ->
+        match state with
+        | LoggedIn (ci, nick) ->
+            transport.Write msg 
+            state |> Success
+        | _ ->
+            Failure InvalidAction
+    | Version ->
+        match state with
+        | LoggedIn (ci, nick) ->
+            transport.Write msg
+            state |> Success
+        | _ ->
+            Failure InvalidAction
 
 let private connect (create_transport: CreateTransport) connect_info state =
     match state with
@@ -375,6 +433,18 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
             |> Result.fromOption <| DepsAreMissing
             |> Result.collect (fun deps -> send_message deps.transport msg state)
             |> Result.map (fun state' -> state', deps_maybe)
+
+        | AgentAction.SendMyInfo ->
+            match state with 
+            | LoggedIn (ci, nick) ->
+                let msg = DcppSendMessage.MyInfo {nick = nick}
+
+                deps_maybe
+                |> Result.fromOption <| DepsAreMissing
+                |> Result.collect (fun deps -> send_message deps.transport msg state)
+                |> Result.map (fun state' -> state', deps_maybe)
+            | _ -> 
+                Failure InvalidAction
 
         | AgentAction.Connect ci ->
             connect create_transport ci state
@@ -447,13 +517,13 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
         |>! Observable.add (fun dcpp_msg -> log.Trace "Received message %A" dcpp_msg)
         |> Control.Observable.scan (fun nick dcpp_msg ->
             match dcpp_msg with
-            | DcppReceiveMessage.Lock msg ->
-                agent.post << AgentAction.SendMessage << DcppSendMessage.ValidateNick <| {
+            | Lock msg ->
+                agent.post << SendMessage << ValidateNick <| {
                     nick = nick_data
                     key = KeyData.create msg.lock
                 }
                 nick
-            | DcppReceiveMessage.ValidateDenied ->
+            | ValidateDenied ->
                 let nick' = 
                     nick
                     |> NickData.unwrap
@@ -461,25 +531,31 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                     |> (+) <| "1"
                     |> NickData.create 
                     |>! Result.mapFailure (fun e -> log.Error "Could not create new nick from old nick %A: %A" nick e)
-                    |>! Result.map (fun nick' -> agent.post << AgentAction.RetryNick <| nick') 
+                    |>! Result.map (fun nick' -> agent.post << RetryNick <| nick') 
                     |> Result.fold id (ct nick)  
                 nick'
-            | DcppReceiveMessage.Hello msg ->
+            | Hello msg ->
                 if msg.nick <> nick_data then log.Warn "Nick received from server (%A) is different from what we sent (%A), continue with \"server\" nick" msg.nick nick_data
                 agent.post << AgentAction.LoggedIn <| msg.nick
+                agent.post << SendMessage <| Version
+                agent.post <| SendMyInfo
                 nick
-            | DcppReceiveMessage.GetPass ->
+            | GetPass ->
                 match pass_data_maybe with
                 | None -> 
                     // TODO terminate everything somehow ?
                     log.Error "Server asks for password but we don't have any"
                 | Some pass_data ->
-                    agent.post << AgentAction.SendMessage << DcppSendMessage.MyPass <| {
+                    agent.post << SendMessage << MyPass <| {
                         password = pass_data 
                     }
                 nick
-            | msg -> 
-                log.Error "Support is not implemented for message %A" msg
+            | BadPass ->
+                log.Error "BadPass for nick %A" nick
+                agent.post AgentAction.Disconnected
+                nick
+            | DcppReceiveMessage.LoggedIn ->
+                // FUTURE it is related to Op users, we dont care about them for a moment
                 nick
         ) nick_data
         |> Observable.subscribeWithCompletion ignore (fun () -> 

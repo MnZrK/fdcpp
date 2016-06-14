@@ -163,7 +163,7 @@ let create_transport (connect_info: ConnectionInfo) =
                 let res = 
                     msg
                     |> getStringF
-                    |>! Result.map (log.Trace "Raw received message: %s")
+                    |>! Result.map (log.Debug "Raw received message: %s")
                     |> Result.bind <| convertStringF
                     |>! Result.mapFailure (log.Error "%s")
                     |> Result.toOption
@@ -173,7 +173,11 @@ let create_transport (connect_info: ConnectionInfo) =
         { new ITransport with 
             member __.Received = received
             member __.Dispose() = client.Dispose()
-            member __.Write(msg) = msg |> DcppMessage_to_bytes |> client.Write
+            member __.Write(msg) = 
+                msg 
+                |> DcppMessage_to_bytes 
+                |>! (getString >> Result.map (log.Debug "Sending message: %s"))
+                |> client.Write
         }
     )
 
