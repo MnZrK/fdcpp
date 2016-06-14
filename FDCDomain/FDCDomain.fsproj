@@ -50,7 +50,6 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <!--<Compile Include="Server.fs" />-->
     <Compile Include="MessageQueue.fs" />
   </ItemGroup>
   <ItemGroup>
