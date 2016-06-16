@@ -107,8 +107,12 @@ let main argv =
         let! port = PortData.create 411
 
         let connect_info = {
-            host = host
-            port = port 
+            ConnectionInfo.host = host
+            ConnectionInfo.port = port 
+        }
+        let listen_info = {
+            ListenInfo.ip = IpAddress.create "127.0.0.1" |> Result.get
+            ListenInfo.port = port 
         }
         let! nick = NickData.create "MnZrKk"
         let pass_maybe = None
@@ -118,7 +122,18 @@ let main argv =
             <| create_log
             <| create_transport
             <| (fun agent -> async { 
-                do! Async.Sleep 60000 
+                do! Async.Sleep 5000
+
+                let search_str = "CopyWizEval.exe"
+
+                log.Info "Posting search action for: %s" search_str
+                agent.post <| Search {
+                    listen_info = listen_info
+                    search_str = search_str
+                }
+
+                do! Async.Sleep 55000
+
                 log.Info "Timedout, disconnecting" })
             <| connect_info
             <| (nick, pass_maybe)

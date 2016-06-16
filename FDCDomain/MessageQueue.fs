@@ -120,6 +120,22 @@ module ASCIIString =
 
     let getBytes (ASCIIString s) = getBytes s |> Result.get
 
+module IpAddress =
+    type T = IpAddress of string
+
+    let create (s: string) = 
+        try
+            System.Net.IPAddress.Parse(s) |> Success
+        with e ->
+            StringError.CouldntConvert e |> Failure 
+        |> Result.map (fun ip ->
+            ip.ToString() |> IpAddress
+        )
+    let fold f (IpAddress ip) = f ip
+    let unwrap (IpAddress ip) = ip
+
+    let getBytes (IpAddress ip) = getBytes ip |> Result.get
+
 module PositiveInt = 
     type T = PositiveInt of uint64
 
@@ -245,8 +261,19 @@ module PortData =
         | _ -> PortData port |> Success 
     
     let fold f (PortData p) = f p
+    let unwrap (PortData p) = p
 
 // domain models
+type ConnectionInfo = {
+    host: HostnameData.T
+    port: PortData.T
+}
+
+type ListenInfo = {
+    ip: IpAddress.T
+    port: PortData.T
+}
+
 type LockMessage = {
     lock: LockData.T
     pk: PkData.T
@@ -295,9 +322,9 @@ type HubNameMessage = {
     name: string
 }
 
-type ConnectionInfo = {
-    host: HostnameData.T
-    port: PortData.T
+type SearchMessage = {
+    listen_info: ListenInfo
+    search_str: string
 }
 
 type NickInfo = {
@@ -332,6 +359,11 @@ type LoggedInEnv = {
     nicks: NickObj list
 }
 
+type SearchAction = {
+    listen_info: ListenInfo
+    search_str: string
+}
+
 // higher-order domain models
 type DcppReceiveMessage = 
 | Lock of LockMessage
@@ -354,6 +386,7 @@ type DcppSendMessage =
 | MyPass of MyPassMessage
 | Version
 | MyInfo of MyInfoMessage
+| Search of SearchMessage
 
 type AgentAction =
 | Connect of ConnectionInfo
@@ -368,6 +401,7 @@ type AgentAction =
 | OpListed of NickData.T list
 | Quitted of NickData.T
 | MyInfoed of NickData.T * NickInfo
+| Search of SearchAction
 
 type State = 
 | NotConnected
@@ -482,6 +516,19 @@ let DCNstring_to_DcppMessage input =
 
 let DcppMessage_to_bytes dcpp_message = 
     match dcpp_message with
+    | DcppSendMessage.Search s_msg ->
+        [
+            "$Search " |> getBytes |> Result.get;
+            IpAddress.getBytes s_msg.listen_info.ip;
+            ":" |> getBytes |> Result.get;
+            (PortData.unwrap s_msg.listen_info.port).ToString() |> getBytes |> Result.get;
+            " " |> getBytes |> Result.get;
+            "F?F?0?1?" |> getBytes |> Result.get;
+            s_msg.search_str |> getBytes |> Result.get; // TODO validate search_str
+            "$$" |> getBytes |> Result.get;
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
     | DcppSendMessage.MyPass mp_msg -> 
         [
             "$MyPass " |> getBytes |> Result.get;
@@ -583,26 +630,39 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
     validate_state (state, deps_maybe) 
     |> Result.collect (fun _ ->
         match action with
+        | AgentAction.Search action ->
+            // TODO group all sendmessage actions into one group
+            deps_maybe
+            |> Result.fromOption <| DepsAreMissing
+            |> Result.bind <| (fun deps ->
+                match state with
+                | LoggedIn env ->
+                    let msg = DcppSendMessage.Search { listen_info = action.listen_info; search_str = action.search_str }
+
+                    deps.transport.Write msg
+                    state |> Success
+                | _ -> 
+                    Failure InvalidAction
+            )
+            |> Result.map (fun state' -> state', deps_maybe)
         | AgentAction.SendNick (nick, key) ->
             let msg = ValidateNick { nick = nick; key = key }
 
-            let res =
-                deps_maybe
-                |> Result.fromOption <| DepsAreMissing
-                |> Result.bind <| (fun deps -> 
-                    match state with
-                    | Connected env ->
-                        deps.transport.Write msg
-                        let state' = WaitingForAuth {
-                            connect_info = env.connect_info
-                            nick = nick
-                            key = key
-                        }
-                        state' |> Success
-                    | _ -> 
-                        Failure InvalidAction
-                ) 
-            res
+            deps_maybe
+            |> Result.fromOption <| DepsAreMissing
+            |> Result.bind <| (fun deps -> 
+                match state with
+                | Connected env ->
+                    deps.transport.Write msg
+                    let state' = WaitingForAuth {
+                        connect_info = env.connect_info
+                        nick = nick
+                        key = key
+                    }
+                    state' |> Success
+                | _ -> 
+                    Failure InvalidAction
+            ) 
             |> Result.map (fun state' -> state', deps_maybe)
         | AgentAction.SendPass (pass) ->
             let msg = MyPass { password = pass }
