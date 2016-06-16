@@ -222,7 +222,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth (connect_info, key, nick_data) @>
+                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth { 
+                    connect_info = connect_info
+                    key = key
+                    nick = nick_data } @>
                 test <@ !write_has_been_called @>
 
                 event.Trigger <| Hello {
@@ -230,7 +233,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data, []) @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
+                    connect_info = connect_info
+                    nick = nick_data
+                    nicks = [] } @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -276,7 +282,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth (connect_info, key, nick_data) @>
+                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth {
+                    connect_info = connect_info
+                    key = key
+                    nick = nick_data } @>
                 test <@ !write_has_been_called = 1 @>
                 event.Trigger <| ValidateDenied
                 do! Async.Sleep timeout
@@ -287,7 +296,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data', []) @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
+                    connect_info = connect_info
+                    nick = nick_data'
+                    nicks = [] } @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -333,7 +345,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth (connect_info, key, nick_data) @>
+                test <@ agent.fetch() |> Result.get |> fst = WaitingForAuth { 
+                    connect_info = connect_info
+                    key = key
+                    nick = nick_data } @>
                 test <@ !write_has_been_called = 1 @>
 
                 event.Trigger <| GetPass
@@ -345,7 +360,10 @@ module ``startQueue Tests`` =
                 }
                 do! Async.Sleep timeout
 
-                test <@ agent.fetch() |> Result.get |> fst = LoggedIn (connect_info, nick_data, []) @>
+                test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
+                    connect_info = connect_info
+                    nick = nick_data
+                    nicks = [] } @>
             })
             <| connect_info
             <| (nick_data, Some pass_data)

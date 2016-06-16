@@ -120,10 +120,7 @@ module Result =
         | Failure x -> 
             x
 
-    let collect f m =
-        match m with
-        | Failure x -> Failure x
-        | Success x -> f x 
+    let collect f m = bind m f 
 
     type SuccessBuilder() =
         member __.Bind(m, f) = bindSuccess m f

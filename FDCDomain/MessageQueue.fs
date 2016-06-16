@@ -278,6 +278,31 @@ type ConnectionInfo = {
     port: PortData.T
 }
 
+// type NickInfo = {
+//     share_size: int
+// }
+
+type ConnectedEnv = {
+    connect_info: ConnectionInfo
+}
+
+type WaitingForAuthEnv = {
+    connect_info: ConnectionInfo
+    nick: NickData.T
+    key: KeyData.T
+}
+
+type WaitingForPassAuthEnv = {
+    connect_info: ConnectionInfo
+    nick: NickData.T
+    password: PasswordData.T
+}
+
+type LoggedInEnv = {
+    connect_info: ConnectionInfo
+    nick: NickData.T
+    nicks: NickData.T list
+}
 
 // higher-order domain models
 type DcppReceiveMessage = 
@@ -300,21 +325,23 @@ type DcppSendMessage =
 | MyInfo of MyInfoMessage
 
 type AgentAction =
-| SendMessage of DcppSendMessage
 | Connect of ConnectionInfo
-| SendMyInfo
+// | SendMyInfo
+| SendNick of NickData.T * KeyData.T 
+| SendPass of PasswordData.T
 | RetryNick of NickData.T
 | Helloed of NickData.T
 | Disconnected
+| Disconnect
 | NickListed of NickData.T list
 | Quitted of NickData.T
 
 type State = 
 | NotConnected
-| Connected          of ConnectionInfo
-| WaitingForAuth     of ConnectionInfo * KeyData.T * NickData.T
-| WaitingForPassAuth of ConnectionInfo * KeyData.T * NickData.T * PasswordData.T
-| LoggedIn           of ConnectionInfo * NickData.T * NickData.T list  
+| Connected          of ConnectedEnv
+| WaitingForAuth     of WaitingForAuthEnv
+| WaitingForPassAuth of WaitingForPassAuthEnv
+| LoggedIn           of LoggedInEnv
 
 // infrastructure interfaces
 type ILogger =
@@ -433,49 +460,26 @@ let private validate_state (state, deps) =
     | NotConnected, _ -> 
         Success ()
     | _, None ->
+        // this is a programming error if we get here. should never-ever happen
         Failure InvalidState
     | _ -> 
         Success ()
-
-let private send_message (transport: ITransport) (msg: DcppSendMessage) state = 
-    match msg with
-    | ValidateNick vn_msg ->
-        match state with
-        | Connected ci ->
-            transport.Write msg 
-            WaitingForAuth (ci, vn_msg.key, vn_msg.nick) |> Success  
-        | _ -> 
-            Failure InvalidAction
-    | MyPass mp_msg ->
-        match state with
-        | WaitingForAuth (ci, key, nick) -> 
-            transport.Write msg
-            WaitingForPassAuth (ci, key, nick, mp_msg.password) |> Success
-        | _ -> 
-            Failure InvalidAction
-    | MyInfo mi_msg ->
-        match state with
-        | LoggedIn _ ->
-            transport.Write msg 
-            state |> Success
-        | _ ->
-            Failure InvalidAction
-    | Version ->
-        match state with
-        | LoggedIn _ ->
-            transport.Write msg
-            state |> Success
-        | _ ->
-            Failure InvalidAction
 
 let private connect (create_transport: CreateTransport) connect_info state =
     match state with
     | NotConnected ->
         create_transport connect_info
         |> Result.mapFailure ActionError.TransportError
-        |> Result.mapSuccess (fun transport -> Connected connect_info, transport)
+        |> Result.mapSuccess (fun transport -> Connected { connect_info = connect_info }, transport)
     | _ -> 
         Failure InvalidAction
+
+let private disconnect deps_maybe = 
+    deps_maybe
+    |> Option.map (fun deps -> deps.transport.Dispose())
+    |> ignore
+
+    (NotConnected, None)
 
 let private dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
     let log = create_log()
@@ -484,23 +488,47 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
     validate_state (state, deps_maybe) 
     |> Result.collect (fun _ ->
         match action with
-        | AgentAction.SendMessage msg ->
-            deps_maybe
-            |> Result.fromOption <| DepsAreMissing
-            |> Result.collect (fun deps -> send_message deps.transport msg state)
-            |> Result.map (fun state' -> state', deps_maybe)
+        | AgentAction.SendNick (nick, key) ->
+            let msg = ValidateNick { nick = nick; key = key }
 
-        | AgentAction.SendMyInfo ->
-            match state with 
-            | LoggedIn (_, nick, _) ->
-                let msg = DcppSendMessage.MyInfo {nick = nick}
-
+            let res =
                 deps_maybe
                 |> Result.fromOption <| DepsAreMissing
-                |> Result.collect (fun deps -> send_message deps.transport msg state)
-                |> Result.map (fun state' -> state', deps_maybe)
-            | _ -> 
-                Failure InvalidAction
+                |> Result.bind <| (fun deps -> 
+                    match state with
+                    | Connected env ->
+                        deps.transport.Write msg
+                        let state' = WaitingForAuth {
+                            connect_info = env.connect_info
+                            nick = nick
+                            key = key
+                        }
+                        state' |> Success
+                    | _ -> 
+                        Failure InvalidAction
+                ) 
+            res
+            |> Result.map (fun state' -> state', deps_maybe)
+        | AgentAction.SendPass (pass) ->
+            let msg = MyPass { password = pass }
+
+            let res = 
+                deps_maybe
+                |> Result.fromOption <| DepsAreMissing
+                |> Result.bind <| (fun deps ->
+                    match state with
+                    | WaitingForAuth env ->
+                        deps.transport.Write msg
+                        WaitingForPassAuth {
+                            connect_info = env.connect_info
+                            nick = env.nick
+                            password = pass
+                        } |> Success
+                    | _ ->
+                        Failure InvalidAction
+                )
+            res
+            |> Result.map (fun state' -> state', deps_maybe)
 
         | AgentAction.Connect ci ->
             connect create_transport ci state
@@ -514,15 +542,15 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
             )
         | AgentAction.RetryNick nick' ->
             match state with 
-            | WaitingForAuth (ci, key, nick) ->
+            | WaitingForAuth env ->
                 deps_maybe
                 |> Result.fromOption <| DepsAreMissing
                 |> Result.map (fun deps ->
                     deps.transport.Write << DcppSendMessage.ValidateNick <| {
                         nick = nick'
-                        key = key
+                        key = env.key
                     } 
-                    WaitingForAuth (ci, key, nick')  
+                    WaitingForAuth { env with nick = nick' }
                 )
             | _ -> 
                 Failure InvalidAction
@@ -530,41 +558,44 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
 
         | AgentAction.Helloed nick' ->
             match state with
-            | WaitingForAuth (ci, key, nick)
-            | WaitingForPassAuth (ci, key, nick, _) ->
-                if nick' = nick then
-                    LoggedIn (ci, nick, []) |> Success
-                else
+            | WaitingForAuth { connect_info = ci; nick = nick }
+            | WaitingForPassAuth { connect_info = ci; nick = nick } ->
+                if nick' <> nick then    
                     // ignoring not "ours" Hello messages 
                     state |> Success
-            | LoggedIn (ci, nick, nicks) ->
-                LoggedIn (ci, nick, nick'::nicks) |> Success //TODO change nick list to some other data structure, like ResizeArray may be
+                else
+                    // we are almost logged in, just need to send $Version and $MyINFO
+                    deps_maybe
+                    |> Result.fromOption <| DepsAreMissing
+                    |>! Result.map (fun deps -> deps.transport.Write (DcppSendMessage.Version))
+                    |>! Result.map (fun deps -> deps.transport.Write (DcppSendMessage.MyInfo {nick = nick}))
+                    |> Result.map (fun _ -> LoggedIn { connect_info = ci; nick = nick; nicks = []})  
+            | LoggedIn env ->
+                //TODO change nick list to richer data structure to hold all the MyINFO stuff
+                LoggedIn { env with nicks = nick'::env.nicks } |> Success //TODO change nick list to some other data structure, like ResizeArray may be
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
 
         | AgentAction.Quitted nick' ->
             match state with
-            | LoggedIn (ci, nick, nicks) ->
-                let nicks' = List.filter ((<>) nick') nicks //TODO OMG THAT MUST BE SLOW
-                LoggedIn (ci, nick, nicks') |> Success
+            | LoggedIn env ->
+                let nicks' = List.filter ((<>) nick') env.nicks //TODO OMG THAT MUST BE SLOW
+                LoggedIn { env with nicks = nicks' } |> Success
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
         | AgentAction.NickListed nicks' ->
             match state with
-            | LoggedIn (ci, nick, nicks) ->
-                LoggedIn (ci, nick, nicks') |> Success
+            | LoggedIn env ->
+                LoggedIn { env with nicks = nicks' } |> Success
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
-
+        
+        | AgentAction.Disconnect
         | AgentAction.Disconnected ->
-            deps_maybe
-            |> Option.map (fun deps -> deps.transport.Dispose())
-            |> ignore
-
-            (NotConnected, None) |> Success
+            disconnect deps_maybe |> Success
     )
     |> Result.mapFailure (fun e -> e, action, state)
     |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
@@ -597,10 +628,7 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
             log.Trace "Received message %A" dcpp_msg
             match dcpp_msg with
             | Lock msg ->
-                agent.post << SendMessage << ValidateNick <| {
-                    nick = nick_data
-                    key = KeyData.create msg.lock
-                }
+                agent.post <| SendNick (nick_data, KeyData.create msg.lock) 
                 nick
             | ValidateDenied ->
                 let nick' = 
@@ -614,7 +642,14 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                     |> Result.fold id (ct nick)  
                 nick'
             | Hello msg ->
-                agent.post << Helloed <| msg.nick
+                let res = 
+                    agent.post_and_reply << Helloed <| msg.nick
+                    |> (Result.fold 
+                        <| ignore
+                        <| (fun e -> 
+                            log.Error "Could not finish logging in, disconnecting: %A" e
+                            agent.post <| Disconnect
+                            ))
                 nick
             | Quit msg ->
                 agent.post << Quitted <| msg.nick
@@ -625,9 +660,7 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                     // TODO terminate everything somehow ?
                     log.Error "Server asks for password but we don't have any"
                 | Some pass_data ->
-                    agent.post << SendMessage << MyPass <| {
-                        password = pass_data 
-                    }
+                    agent.post <| SendPass pass_data
                 nick
             | BadPass ->
                 log.Error "BadPass for nick %A" nick
@@ -650,7 +683,7 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 nick
         ) nick_data
         |> Observable.subscribeWithCompletion ignore (fun () -> 
-            log.Error "Disconnected"
+            log.Warn "Disconnected"
             agent.post AgentAction.Disconnected
         )
         |> ignore
@@ -658,13 +691,7 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
 
     state_changed |> Event.add (
         function
-        | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn (ci, nick, nicks) -> 
-            log.Info "Successfully logged in as %A" nick
-            agent.post_and_reply << SendMessage <| Version
-            |> Result.bind <| (fun _ -> agent.post_and_reply <| SendMyInfo)
-            |>! Result.mapFailure (fun e -> log.Error "Couldn't finish login: %A" e)
-            |> ignore
-
+        | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn env' -> log.Info "Successfully logged in as %A" env'.nick
         | _ -> ()
     )
 
