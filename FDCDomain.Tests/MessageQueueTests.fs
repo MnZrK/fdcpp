@@ -420,3 +420,53 @@ module ``infrastructure Tests`` =
             message = "Hello! (= \n qwer \t asdf" 
         }) @> 
                 
+    [<Fact>]
+    let ``Should convert MyInfo example`` () =
+        let input = "$MyINFO $ALL PtokaX $ $$$$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (DcppReceiveMessage.MyInfo {
+            nick = NickData.create "PtokaX" |> Result.get
+            share_size = PositiveInt.fromULong 0UL 
+        }) @> 
+
+    [<Fact>]
+    let ``Should convert another MyInfo example`` () =
+        let input = "$MyINFO $ALL MnZrKk $ $50A$$0$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (DcppReceiveMessage.MyInfo {
+            nick = NickData.create "MnZrKk" |> Result.get
+            share_size = PositiveInt.fromULong 0UL
+        }) @>
+
+    [<Fact>]
+    let ``Should convert yet another MyInfo example`` () =
+        let input = "$MyINFO $ALL MnZrKk $ $50A$$1000$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (DcppReceiveMessage.MyInfo {
+            nick = NickData.create "MnZrKk" |> Result.get
+            share_size = PositiveInt.fromULong 1000UL 
+        }) @>
+
+    [<Fact>]
+    let ``Should convert Flylink MyInfo example`` () =
+        let input = "$MyINFO $ALL TestUser [15]$A$50A$$2948599916$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (DcppReceiveMessage.MyInfo {
+            nick = NickData.create "TestUser" |> Result.get
+            share_size = PositiveInt.fromULong 2948599916UL 
+        }) @>
+
+    [<Fact>]
+    let ``Should convert another real-life MyInfo example`` () =
+        let input = "$MyINFO $ALL oksanasumy [13]<FlylinkDC++ V:r415,M:P,H:72/0/4,S:15>$ $50$$108650946339$|"
+
+        let res = DCNstring_to_DcppMessage input
+        test <@ res = Success (DcppReceiveMessage.MyInfo {
+            nick = NickData.create "oksanasumy" |> Result.get
+            share_size = PositiveInt.fromULong 108650946339UL 
+        }) @>
+        

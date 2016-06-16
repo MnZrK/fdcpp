@@ -120,6 +120,23 @@ module ASCIIString =
 
     let getBytes (ASCIIString s) = getBytes s |> Result.get
 
+module PositiveInt = 
+    type T = PositiveInt of uint64
+
+    type Error = 
+    | NegativeValue
+
+    let create (str: string) =
+        try
+            Convert.ToUInt64(str) |> PositiveInt |> Success
+        with ex ->
+            StringError.CouldntConvert ex |> Failure
+
+    let fromULong (i: uint64) = PositiveInt i 
+
+    let fold f (PositiveInt i) = f i
+    let unwrap (PositiveInt i) = i
+
 module PkData = 
     type T = PkData of string
 
@@ -250,9 +267,14 @@ type MyPassMessage = {
 
 type MyInfoMessage = {
     nick: NickData.T
+    share_size: PositiveInt.T
 }
 
 type NickListMessage = {
+    nicks: NickData.T list
+}
+
+type OpListMessage = {
     nicks: NickData.T list
 }
 
@@ -278,9 +300,15 @@ type ConnectionInfo = {
     port: PortData.T
 }
 
-// type NickInfo = {
-//     share_size: int
-// }
+type NickInfo = {
+    share_size: PositiveInt.T
+}
+
+type NickObj = {
+    nick: NickData.T
+    nick_info: NickInfo option
+    is_Op: bool
+}
 
 type ConnectedEnv = {
     connect_info: ConnectionInfo
@@ -301,7 +329,7 @@ type WaitingForPassAuthEnv = {
 type LoggedInEnv = {
     connect_info: ConnectionInfo
     nick: NickData.T
-    nicks: NickData.T list
+    nicks: NickObj list
 }
 
 // higher-order domain models
@@ -313,10 +341,12 @@ type DcppReceiveMessage =
 | Hello of HelloMessage  //TODO change handler for Hello
 | LoggedIn
 | NickList of NickListMessage
+| OpList of OpListMessage
 | Quit of QuitMessage
 | HubTopic of HubTopicMessage
 | HubName of HubNameMessage
 | ChatMessage of ChatMessageMessage
+| MyInfo of MyInfoMessage
 
 type DcppSendMessage = 
 | ValidateNick of ValidateNickMessage
@@ -334,7 +364,9 @@ type AgentAction =
 | Disconnected
 | Disconnect
 | NickListed of NickData.T list
+| OpListed of NickData.T list
 | Quitted of NickData.T
+| MyInfoed of NickData.T * NickInfo
 
 type State = 
 | NotConnected
@@ -373,10 +405,10 @@ type Dependencies = {
 let DCNstring_to_DcppMessage input =
     Result.success_workflow_with_string_failures {
         match input with
-        | Regex "^\$Hello (.*)\|$" [ nick ] ->
+        | Regex "^\$Hello (.+)\|$" [ nick ] ->
             let! nick_data = NickData.create nick
             return Hello { nick = nick_data }
-        | Regex "^\$Quit (.*)\|$" [ nick ] ->
+        | Regex "^\$Quit (.+)\|$" [ nick ] ->
             let! nick_data = NickData.create nick
             return Quit { nick = nick_data }            
         | Regex "^\$BadPass\|$" [] -> 
@@ -385,13 +417,25 @@ let DCNstring_to_DcppMessage input =
             return GetPass
         | Regex "^\$ValidateDenide\|$" [] -> 
             return ValidateDenied
-        | Regex "^\$Lock (.*) Pk=(.*)\|$" [ lock; pk ] ->
+        | Regex "^\$Lock (.+) Pk=(.+)\|$" [ lock; pk ] ->
             let! lock_data = LockData.create << DCNtoString <| lock
             let! pk_data = PkData.create pk // TODO check for what fields DCN encoding/decoding should be happening 
             return Lock {
                 lock = lock_data
                 pk = pk_data 
-            } 
+            }
+        | Regex "^\$MyINFO \$ALL (.+?) .*\$(.*?)\$\|$" [ nick_str; share_size_str ] ->
+            let! nick_data = NickData.create nick_str
+            let! share_size =  
+                if share_size_str = String.Empty then
+                    PositiveInt.fromULong 0UL |> Success
+                else
+                    PositiveInt.create share_size_str
+
+            return DcppReceiveMessage.MyInfo {
+                nick = nick_data
+                share_size = share_size
+            }
         | Regex "^\$NickList (.*)\$\$\|$" [ nicklist_str ] ->
             let nicks =
                 nicklist_str
@@ -403,15 +447,26 @@ let DCNstring_to_DcppMessage input =
             return NickList {
                 nicks = nicks
             }
-        | Regex "^\$HubTopic (.*)\|$" [topic] ->
+        | Regex "^\$OpList (.*)\$\$\|$" [ nicklist_str ] ->
+            let nicks =
+                nicklist_str
+                |> String.split "$$"
+                |> Seq.map NickData.create
+                |> Seq.choose (Result.fold Some (ct None))
+                |> List.ofSeq
+            
+            return OpList {
+                nicks = nicks
+            }
+        | Regex "^\$HubTopic (.+)\|$" [topic] ->
             return HubTopic { 
                 topic = topic
             }
-        | Regex "^\$HubName (.*)\|$" [hubname] ->
+        | Regex "^\$HubName (.+)\|$" [hubname] ->
             return HubName { 
                 name = hubname
             }            
-        | Regex "^\<(.*?)\>\s((\s|.)*)\|$" [nick_str; message; _] ->
+        | Regex "^\<(.+?)\>\s((\s|.)*)\|$" [nick_str; message; _] ->
             let! nick = NickData.create nick_str
             return ChatMessage {
                 nick = nick
@@ -480,6 +535,43 @@ let private disconnect deps_maybe =
     |> ignore
 
     (NotConnected, None)
+
+let private add_nonexisting_nick nick' nicks = 
+    { nick = nick'; nick_info = None; is_Op = false }::nicks
+
+let private add_nick nick' (nicks: NickObj list) =
+    //TODO OMG THAT MUST BE SLOW
+    let already_there = nicks |> List.exists (fun nick_obj -> nick' = nick_obj.nick)
+    if not already_there then add_nonexisting_nick nick' nicks
+    else nicks
+
+let private add_nicks nicks = 
+    nicks |> List.fold (fun acc nick -> add_nick nick acc) []
+
+let private remove_nick nick (nicks: NickObj list) =
+    //TODO OMG THAT MUST BE SLOW
+    List.filter (fun (nick_obj: NickObj) -> nick_obj.nick <> nick) nicks 
+
+let private add_nick_with_info nick nick_info nicks = 
+    //TODO OMG THAT MUST BE SLOW
+    let exists = List.exists (fun (nick_obj: NickObj) -> nick_obj.nick = nick) nicks
+    if exists then
+        nicks |> List.map (fun nick_obj -> 
+            if nick_obj.nick = nick then { nick_obj with nick_info = nick_info }
+            else nick_obj
+        )
+    else
+        {nick = nick; nick_info = nick_info; is_Op = false}::nicks
+    
+let private mark_nick_as_op nick nicks = 
+    let exists = List.exists (fun (nick_obj: NickObj) -> nick_obj.nick = nick) nicks
+    if exists then
+        nicks |> List.map (fun nick_obj -> 
+            if nick_obj.nick = nick then { nick_obj with is_Op = true }
+            else nick_obj
+        )
+    else
+        {nick = nick; nick_info = None; is_Op = true}::nicks
 
 let private dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
     let log = create_log()
@@ -564,15 +656,24 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
                     // ignoring not "ours" Hello messages 
                     state |> Success
                 else
+                    let myinfo_msg = DcppSendMessage.MyInfo {nick = nick; share_size = PositiveInt.fromULong 0UL}
                     // we are almost logged in, just need to send $Version and $MyINFO
                     deps_maybe
                     |> Result.fromOption <| DepsAreMissing
                     |>! Result.map (fun deps -> deps.transport.Write (DcppSendMessage.Version))
-                    |>! Result.map (fun deps -> deps.transport.Write (DcppSendMessage.MyInfo {nick = nick}))
+                    |>! Result.map (fun deps -> deps.transport.Write myinfo_msg)
                     |> Result.map (fun _ -> LoggedIn { connect_info = ci; nick = nick; nicks = []})  
             | LoggedIn env ->
-                //TODO change nick list to richer data structure to hold all the MyINFO stuff
-                LoggedIn { env with nicks = nick'::env.nicks } |> Success //TODO change nick list to some other data structure, like ResizeArray may be
+                LoggedIn { env with nicks = (add_nick nick' env.nicks) } |> Success
+            | _ -> 
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
+
+        | AgentAction.MyInfoed (nick', nick_info') ->
+            match state with
+            | LoggedIn env ->
+                let nicks' = (add_nick_with_info nick' (Some nick_info') env.nicks)
+                LoggedIn { env with nicks = nicks' } |> Success
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
@@ -580,19 +681,28 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
         | AgentAction.Quitted nick' ->
             match state with
             | LoggedIn env ->
-                let nicks' = List.filter ((<>) nick') env.nicks //TODO OMG THAT MUST BE SLOW
-                LoggedIn { env with nicks = nicks' } |> Success
+                LoggedIn { env with nicks = (remove_nick nick' env.nicks) } |> Success
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
+
         | AgentAction.NickListed nicks' ->
             match state with
             | LoggedIn env ->
-                LoggedIn { env with nicks = nicks' } |> Success
+                LoggedIn { env with nicks = add_nicks nicks' } |> Success
             | _ -> 
                 Failure InvalidAction
             |> Result.map (fun state' -> state', deps_maybe)
         
+        | AgentAction.OpListed nicks ->
+            match state with
+            | LoggedIn env ->
+                let nicks' = nicks |> List.fold (fun nicks' nick -> mark_nick_as_op nick nicks') env.nicks
+                LoggedIn { env with nicks = nicks' } |> Success
+            | _ -> 
+                Failure InvalidAction
+            |> Result.map (fun state' -> state', deps_maybe)
+
         | AgentAction.Disconnect
         | AgentAction.Disconnected ->
             disconnect deps_maybe |> Success
@@ -647,9 +757,13 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                     |> (Result.fold 
                         <| ignore
                         <| (fun e -> 
+                            // TODO fix this will trigger even for usual Hellos, not for the one which confirms our login
                             log.Error "Could not finish logging in, disconnecting: %A" e
                             agent.post <| Disconnect
                             ))
+                nick
+            | DcppReceiveMessage.MyInfo msg ->
+                agent.post <| MyInfoed (msg.nick, { share_size = msg.share_size })
                 nick
             | Quit msg ->
                 agent.post << Quitted <| msg.nick
@@ -680,6 +794,9 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 nick
             | NickList msg ->
                 agent.post <| NickListed msg.nicks
+                nick
+            | OpList msg ->
+                agent.post <| OpListed msg.nicks
                 nick
         ) nick_data
         |> Observable.subscribeWithCompletion ignore (fun () -> 
