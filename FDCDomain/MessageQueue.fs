@@ -347,6 +347,7 @@ type DcppReceiveMessage =
 | HubName of HubNameMessage
 | ChatMessage of ChatMessageMessage
 | MyInfo of MyInfoMessage
+| Ignore_
 
 type DcppSendMessage = 
 | ValidateNick of ValidateNickMessage
@@ -472,6 +473,8 @@ let DCNstring_to_DcppMessage input =
                 nick = nick
                 message = message
             }
+        | Regex "^\$Search .*\|$" [] ->
+            return Ignore_
         | _ -> 
             return! Failure "Couldn't parse"
     }
@@ -797,6 +800,8 @@ let private handle_agent (create_log: CreateLogger) await_terminator connect_inf
                 nick
             | OpList msg ->
                 agent.post <| OpListed msg.nicks
+                nick
+            | Ignore_ ->
                 nick
         ) nick_data
         |> Observable.subscribeWithCompletion ignore (fun () -> 
