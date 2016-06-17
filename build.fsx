@@ -36,6 +36,11 @@ Target "Build" (fun _ ->
         |> Log "AppBuild-Output: "
 )
 
+Target "BuildRelease" (fun _ ->
+    MSBuildRelease buildDir "Build" appReferences
+        |> Log "AppBuild-Output: "
+)
+
 Target "BuildTests" (fun _ ->
     MSBuildDebug buildDir "Build" testsReferences
         |> Log "TestsBuild-Output: "
@@ -60,6 +65,11 @@ Target "Deploy" (fun _ ->
 // Build order
 "Clean"
   ==> "Build"
+  ==> "Deploy"
+
+// Build order
+"Clean"
+  ==> "BuildRelease"
   ==> "Deploy"
 
 // start build
