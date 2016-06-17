@@ -296,6 +296,7 @@ type User =
     ; user_info: UserInfo option
     ; is_Op: bool }
 
+type UserMapType = MapWithArbKeyType<NickData.T, User>
 // domain models (for Dcpp messages)
 type LockMessage =
     { lock: LockData.T
@@ -347,7 +348,7 @@ type WaitingForPassAuthEnv =
 type LoggedInEnv =
     { connect_info: ConnectionInfo
     ; nick: NickData.T
-    ; users: User list }
+    ; users: UserMapType }
 
 // domain models (for Action environments)
 type SearchAction =
@@ -544,45 +545,36 @@ let DcppMessage_to_bytes dcpp_message =
         ]
         |> Array.concat
 
+let UserMap = new MapWithArbKey<NickData.T, User>(fun user -> user.nick)
 // domain logic (functions)
 [<AutoOpen>]
 module UserModule = 
-    let add_nonexisting_nick nick' users =
-        { nick = nick'; user_info = None; is_Op = false }::users
+    let create_user nick = 
+        { nick = nick; user_info = None; is_Op = false }
 
-    let add_nick nick' (users: User list) =
-        //TODO OMG THAT MUST BE SLOW
-        let already_there = users |> List.exists (fun user -> nick' = user.nick)
-        if not already_there then add_nonexisting_nick nick' users
-        else users
+    let add_nick nick' users =
+        if UserMap.containsKey nick' users then users
+        else UserMap.add (create_user nick') users
 
     let add_nicks nicks =
-        nicks |> List.fold (fun users nick -> add_nick nick users) []
+        nicks |> Seq.map create_user |> Seq.fold (fun map user -> UserMap.add user map) UserMap.empty
 
-    let remove_nick nick (users: User list) =
-        //TODO OMG THAT MUST BE SLOW
-        List.filter (fun (user: User) -> user.nick <> nick) users
+    let remove_nick nick users =
+        UserMap.remove nick users
 
     let add_nick_with_info nick user_info users =
-        //TODO OMG THAT MUST BE SLOW
-        let exists = List.exists (fun (user: User) -> user.nick = nick) users
-        if exists then
-            users |> List.map (fun user ->
-                if user.nick = nick then { user with user_info = user_info }
-                else user
-            )
-        else
-            {nick = nick; user_info = user_info; is_Op = false}::users
+        let user' = 
+            match UserMap.tryFind nick users with
+            | Some user -> { user with user_info = user_info } 
+            | None -> { nick = nick; user_info = user_info; is_Op = false }
+        UserMap.add user' users
 
     let mark_nick_as_op nick users =
-        let exists = List.exists (fun (user: User) -> user.nick = nick) users
-        if exists then
-            users |> List.map (fun user ->
-                if user.nick = nick then { user with is_Op = true }
-                else user
-            )
-        else
-            {nick = nick; user_info = None; is_Op = true}::users
+        let user' = 
+            match UserMap.tryFind nick users with
+            | Some user -> { user with is_Op = true } 
+            | None -> { nick = nick; user_info = None; is_Op = true }
+        UserMap.add user' users
 
 let private validate_state (state, deps) =
     match (state, deps) with
@@ -656,8 +648,8 @@ let private dispatch_main_action action env =
     | NickListed nicks' ->
         Success { env with users = add_nicks nicks' }
     | OpListed nicks->
-        let nicks' = nicks |> List.fold (fun nicks' nick -> mark_nick_as_op nick nicks') env.users
-        Success { env with users = nicks' } 
+        let users' = nicks |> Seq.fold (fun nicks' nick -> mark_nick_as_op nick nicks') env.users
+        Success { env with users = users' } 
 
 let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_workflow {
     match state with 
@@ -673,7 +665,7 @@ let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_
         deps.transport.Write Version
         deps.transport.Write myinfo_msg
 
-        return LoggedIn { connect_info = ci; nick = nick; users = []}
+        return LoggedIn { connect_info = ci; nick = nick; users = UserMap.empty }
     | LoggedIn env ->
         return LoggedIn { env with users = (add_nick nick' env.users) }
     | _ ->

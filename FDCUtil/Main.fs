@@ -1,5 +1,34 @@
 module FDCUtil.Main
 
+/// Do not use directly
+type MapWithArbKeyType<'key, 'value> when 'key : comparison = MapWithArbKeyType of Map<'key, 'value>
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NameConventions", CheckId = "*")>] 
+type MapWithArbKey<'key, 'value> when 'key : comparison (construct_key: 'value -> 'key) = 
+    member __.add value (MapWithArbKeyType map) = 
+        let key = construct_key value
+        MapWithArbKeyType (Map.add key value map) 
+
+    member __.addIfMissing value (MapWithArbKeyType map) =
+        let key = construct_key value
+        if Map.containsKey key map then map
+        else Map.add key value map
+        |> MapWithArbKeyType
+
+    member __.find key (MapWithArbKeyType map) = 
+        Map.find key map
+
+    member __.tryFind key (MapWithArbKeyType map) =
+        Map.tryFind key map
+
+    member __.containsKey key (MapWithArbKeyType map) = 
+        Map.containsKey key map
+
+    member __.empty = 
+        MapWithArbKeyType Map.empty<'key, 'value>
+
+    member __.remove key (MapWithArbKeyType map) = 
+        Map.remove key map |> MapWithArbKeyType
+
 module String =
   let split (sep:string) (str:string) =
     match sep, str with

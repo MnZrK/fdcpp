@@ -122,19 +122,26 @@ let main argv =
             <| create_log
             <| create_transport
             <| (fun agent ->  
-                Thread.Sleep 5000
+                // Thread.Sleep 5000
 
-                let search_str = "CopyWizEval.exe"
+                // let search_str = "CopyWizEval.exe"
 
-                log.Info "Posting search action for: %s" search_str
-                agent.post << Send <| Search {
-                    listen_info = listen_info
-                    search_str = search_str
-                }
+                // log.Info "Posting search action for: %s" search_str
+                // agent.post << Send <| Search {
+                //     listen_info = listen_info
+                //     search_str = search_str
+                // }
 
-                Thread.Sleep 55000
 
-                log.Info "Timedout, disconnecting" )
+                // Thread.Sleep 55000
+
+                // log.Info "Timedout, disconnecting"
+
+                let rec loop() = 
+                    Thread.Sleep 10000
+                    loop()
+                loop()
+            )
             <| connect_info
             <| (nick, pass_maybe)
 
