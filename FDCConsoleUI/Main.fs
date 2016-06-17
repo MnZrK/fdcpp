@@ -121,20 +121,20 @@ let main argv =
             start_queue
             <| create_log
             <| create_transport
-            <| (fun agent -> async { 
-                do! Async.Sleep 5000
+            <| (fun agent ->  
+                Thread.Sleep 5000
 
                 let search_str = "CopyWizEval.exe"
 
                 log.Info "Posting search action for: %s" search_str
-                agent.post <| Search {
+                agent.post << Send <| Search {
                     listen_info = listen_info
                     search_str = search_str
                 }
 
-                do! Async.Sleep 55000
+                Thread.Sleep 55000
 
-                log.Info "Timedout, disconnecting" })
+                log.Info "Timedout, disconnecting" )
             <| connect_info
             <| (nick, pass_maybe)
 

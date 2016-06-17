@@ -34,9 +34,12 @@ let callable_once fn =
 let tee fn x = x |> fn |> ignore; x
 let ( |>! ) x fn = tee fn x
 
-type Result<'a, 'b> = 
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NameConventions", CheckId = "*")>]
+type ('a,'b) result =
 | Success of 'a
 | Failure of 'b
+type Result<'a, 'b> = result<'a, 'b> 
+
 module Result =
     let fromOption o e =
         match o with 
@@ -147,9 +150,11 @@ module Result =
         member __.ReturnFrom(x) = x
     let failure_workflow = new FailureBuilder()
 
-type ResultList<'a, 'b> = Result<'a, 'b> list
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NameConventions", CheckId = "*")>]
+type ('a, 'b) resultlist = result<'a, 'b> list
+type ResultList<'a, 'b> = resultlist<'a, 'b> 
 module ResultList =
-    let swap (xs: ResultList<'a, _>): Result<'a list, _> =
+    let swap (xs: resultlist<'a, _>): result<'a list, _> =
         let error = 
             xs 
             |> List.tryPick (
@@ -169,7 +174,7 @@ module ResultList =
             )
             |> Success
 
-    let bind (m: Result<'x list, _>) (f: 'x -> Result<'x list, _>): Result<'x list, _> =
+    let bind (m: result<'x list, _>) (f: 'x -> result<'x list, _>): result<'x list, _> =
         match m with
         | Success xs ->
             xs
@@ -179,6 +184,32 @@ module ResultList =
         | Failure x -> 
             Failure x 
     let (>>=) = bind
+
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NameConventions", CheckId = "*")>]
+type ('a, 'b) asyncresult = Async<result<'a,'b>>
+type AsyncResult<'a, 'b> = asyncresult<'a, 'b>
+module AsyncResult = 
+    let map f m = async {
+        let! res = m
+        return Result.map f res
+    } 
+    let (<?>) = map
+
+    let bindSuccess m f = async {
+        let! res = m
+        return! 
+            match res with
+            | Failure x ->  async { return Failure x }
+            | Success x -> f x
+    }
+    let bind = bindSuccess
+    let (>>=) = bind
+
+    type SuccessBuilder() =
+        member __.Bind(m, f) = bindSuccess m f
+        member __.Return(x) = async { return Success x }
+        member __.ReturnFrom(x) = x
+    let success_workflow = new SuccessBuilder()    
 
 module AgentWithComplexState =
     open System.Threading

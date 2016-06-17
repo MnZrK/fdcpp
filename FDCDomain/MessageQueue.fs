@@ -8,7 +8,7 @@ open FDCUtil.Main.Regex
 open FSharp.Control.Reactive
 
 // errors
-type StringError = 
+type StringError =
 | Missing
 | NotASCIIString
 | IncludesForbiddenCharacter of char
@@ -19,29 +19,29 @@ type TransportError =
 | CouldntConnect of string
 
 type ActionError =
-| InvalidState 
+| InvalidState
 | InvalidAction
 | DepsAreMissing
 | TransportError of TransportError
 
-type QueueError<'a> = 
+type QueueError<'a> =
 | CouldntConnect of 'a
 
 // utilities
-let getBytes (str: string) = 
+let getBytes (str: string) =
     try System.Text.Encoding.ASCII.GetBytes(str) |> Success
     with ex -> CouldntConvert ex |> Failure
-        
-let getByte (c: char) = 
+
+let getByte (c: char) =
     try System.Convert.ToByte(c) |> Success
     with ex -> CouldntConvert ex |> Failure
-    
-let getString bytes = 
+
+let getString bytes =
     try System.Text.Encoding.ASCII.GetString(bytes) |> Success
     with ex -> CouldntConvert ex |> Failure
 
-let byteToDCN b = 
-    let res = 
+let byteToDCN b =
+    let res =
         match b with
         | 0uy -> getBytes "/%DCN000%/"
         | 5uy -> getBytes "/%DCN005%/"
@@ -51,12 +51,12 @@ let byteToDCN b =
         | 126uy -> getBytes "/%DCN126%/"
         | b -> [|b|] |> Success
 
-    match res with 
+    match res with
     | Success bytes -> bytes
     | _ -> failwith "It is impossible to get here, function always succeeds"
 
-let stringToDCN (s: string) = 
-    let getBytesL = getBytes >> Result.map List.ofArray 
+let stringToDCN (s: string) =
+    let getBytesL = getBytes >> Result.map List.ofArray
     let byteToDCNL = byteToDCN >> List.ofArray |> List.collect
     let getStringL = List.toArray >> getString
 
@@ -65,8 +65,8 @@ let stringToDCN (s: string) =
     |> Result.map byteToDCNL
     |> Result.bind <| getStringL
 
-let DCNtoString (str: string) = 
-    let str0uy = getString [|0uy|] |> Result.get 
+let DCNtoString (str: string) =
+    let str0uy = getString [|0uy|] |> Result.get
     let str5uy = getString [|5uy|] |> Result.get
     let str36uy = getString [|36uy|] |> Result.get
     let str96uy = getString [|96uy|] |> Result.get
@@ -79,7 +79,7 @@ let DCNtoString (str: string) =
         ("/%DCN036%/", str36uy);
         ("/%DCN096%/", str96uy);
         ("/%DCN124%/", str124uy);
-        ("/%DCN126%/", str126uy)            
+        ("/%DCN126%/", str126uy)
     ]
 
     matches
@@ -87,29 +87,29 @@ let DCNtoString (str: string) =
         res.Replace(strFrom, strTo)
     ) str
 
-let mapNullString f (s: string) = 
+let mapNullString f (s: string) =
     match s with
     | null -> StringError.Missing |> Failure
     | _ -> f s |> Success
 
 // primitive types
-module ASCIIString = 
+module ASCIIString =
     type T = ASCIIString of string
 
     let create =
         function
         | null -> StringError.Missing |> Failure
-        | s -> 
-            let isAscii = 
-                String.forall 
-                <| (fun c -> 
-                        match getByte c with 
+        | s ->
+            let isAscii =
+                String.forall
+                <| (fun c ->
+                        match getByte c with
                         | Success b ->
                             126uy >= b && b >= 32uy
-                        | _ -> 
+                        | _ ->
                             false
-                    ) 
-                <| s 
+                    )
+                <| s
             if isAscii then
                 ASCIIString s |> Success
             else
@@ -123,11 +123,11 @@ module ASCIIString =
 module IpAddress =
     type T = IpAddress of string
 
-    let create (s: string) = 
+    let create (s: string) =
         try
             System.Net.IPAddress.Parse(s) |> Success
         with e ->
-            StringError.CouldntConvert e |> Failure 
+            StringError.CouldntConvert e |> Failure
         |> Result.map (fun ip ->
             ip.ToString() |> IpAddress
         )
@@ -136,10 +136,10 @@ module IpAddress =
 
     let getBytes (IpAddress ip) = getBytes ip |> Result.get
 
-module PositiveInt = 
+module PositiveInt =
     type T = PositiveInt of uint64
 
-    type Error = 
+    type Error =
     | NegativeValue
 
     let create (str: string) =
@@ -148,17 +148,18 @@ module PositiveInt =
         with ex ->
             StringError.CouldntConvert ex |> Failure
 
-    let fromULong (i: uint64) = PositiveInt i 
+    let fromULong (i: uint64) = PositiveInt i
 
     let fold f (PositiveInt i) = f i
     let unwrap (PositiveInt i) = i
 
-module PkData = 
+// domain primitive types
+module PkData =
     type T = PkData of string
 
     let create = mapNullString PkData
 
-    let fold f (PkData s) = f s 
+    let fold f (PkData s) = f s
 
 module LockData =
     type T = LockData of ASCIIString.T
@@ -166,30 +167,30 @@ module LockData =
     let create (input: string) =
         input
         |> ASCIIString.create
-        |> Result.bind <| 
+        |> Result.bind <|
         (fun s ->
             let length = ASCIIString.fold String.length s
             if length < 2 then
                 StringError.MustNotBeShorterThan 2 |> Failure
-            else 
+            else
                 LockData s |> Success
         )
 
     let fold f (LockData s) = f s
 
-module NickData = 
+module NickData =
     type T = NickData of ASCIIString.T
 
     let create (str: string) =
         let forbidden_chars = ['|'; '$'; ' ']
-        
+
         let canonicalized = System.Text.RegularExpressions.Regex.Replace(str,"\s"," ").Trim()
 
         let forbidden = forbidden_chars |> List.tryFind (fun c -> canonicalized.IndexOf(string c) >= 0)
-        
+
         match forbidden with
         | Some c -> StringError.IncludesForbiddenCharacter c |> Failure
-        | None ->  
+        | None ->
             canonicalized
             |> ASCIIString.create
             |> Result.map NickData
@@ -197,21 +198,21 @@ module NickData =
     let fold f (NickData s) = f s
     let unwrap (NickData s) = s
 
-module KeyData = 
+module KeyData =
     type T = KeyData of byte[]
 
     let create (lockData: LockData.T) =
         let lockBytes = LockData.fold ASCIIString.getBytes lockData
-        let nibbleSwap b = ((b<<<4) &&& 240uy) ||| ((b>>>4) &&& 15uy) 
+        let nibbleSwap b = ((b<<<4) &&& 240uy) ||| ((b>>>4) &&& 15uy)
 
         let lockLen = lockBytes.Length
-        let key = Array.init lockLen (fun index -> 
+        let key = Array.init lockLen (fun index ->
             if (index = 0) then
                 lockBytes.[0] ^^^ lockBytes.[lockLen-1] ^^^ lockBytes.[lockLen-2] ^^^ 5uy
             else
                 lockBytes.[index] ^^^ lockBytes.[index-1]
-        ) 
-        
+        )
+
         key |> Array.map nibbleSwap |> Array.collect byteToDCN |> KeyData
 
     let fold f (KeyData b) = f b
@@ -222,14 +223,14 @@ module PasswordData =
 
     let create (str: string) =
         let forbidden_chars = ['|'; '$'; ' ']
-        
+
         let canonicalized = System.Text.RegularExpressions.Regex.Replace(str,"\s"," ").Trim()
 
         let forbidden = forbidden_chars |> List.tryFind (fun c -> canonicalized.IndexOf(string c) >= 0)
-        
+
         match forbidden with
         | Some c -> StringError.IncludesForbiddenCharacter c |> Failure
-        | None ->  
+        | None ->
             canonicalized
             |> ASCIIString.create
             |> Result.map PasswordData
@@ -237,8 +238,8 @@ module PasswordData =
     let fold f (PasswordData p) = f p
     let unwrap (PasswordData p) = p
 
-    let getBytes (PasswordData pass) = 
-        getBytes |> ASCIIString.fold <| pass 
+    let getBytes (PasswordData pass) =
+        getBytes |> ASCIIString.fold <| pass
         |> Result.get
 module HostnameData =
     type T = HostnameData of string
@@ -247,10 +248,10 @@ module HostnameData =
 
     let fold f (HostnameData h) = f h
 
-module PortData = 
+module PortData =
     type T = PortData of int
 
-    type Error = 
+    type Error =
     | Negative
     | TooBig
 
@@ -258,159 +259,20 @@ module PortData =
         match port with
         | _ when port <= 0 -> Error.Negative |> Failure
         | _ when port >= 65535 -> Error.TooBig |> Failure
-        | _ -> PortData port |> Success 
-    
+        | _ -> PortData port |> Success
+
     let fold f (PortData p) = f p
     let unwrap (PortData p) = p
 
-// domain models
-type ConnectionInfo = {
-    host: HostnameData.T
-    port: PortData.T
-}
+// infrastructure types & interfaces
+type ConnectionInfo =
+    { host: HostnameData.T
+    ; port: PortData.T }
 
-type ListenInfo = {
-    ip: IpAddress.T
-    port: PortData.T
-}
+type ListenInfo =
+    { ip: IpAddress.T
+    ; port: PortData.T }
 
-type LockMessage = {
-    lock: LockData.T
-    pk: PkData.T
-}
-
-type HelloMessage = {
-    nick: NickData.T
-}
-
-type ValidateNickMessage = {
-    key: KeyData.T
-    nick: NickData.T
-}
-
-type MyPassMessage = {
-    password: PasswordData.T
-}
-
-type MyInfoMessage = {
-    nick: NickData.T
-    share_size: PositiveInt.T
-}
-
-type NickListMessage = {
-    nicks: NickData.T list
-}
-
-type OpListMessage = {
-    nicks: NickData.T list
-}
-
-type QuitMessage = {
-    nick: NickData.T
-}
-
-type ChatMessageMessage = {
-    nick: NickData.T
-    message: string
-}
-
-type HubTopicMessage = {
-    topic: string
-}
-
-type HubNameMessage = {
-    name: string
-}
-
-type SearchMessage = {
-    listen_info: ListenInfo
-    search_str: string
-}
-
-type NickInfo = {
-    share_size: PositiveInt.T
-}
-
-type NickObj = {
-    nick: NickData.T
-    nick_info: NickInfo option
-    is_Op: bool
-}
-
-type ConnectedEnv = {
-    connect_info: ConnectionInfo
-}
-
-type WaitingForAuthEnv = {
-    connect_info: ConnectionInfo
-    nick: NickData.T
-    key: KeyData.T
-}
-
-type WaitingForPassAuthEnv = {
-    connect_info: ConnectionInfo
-    nick: NickData.T
-    password: PasswordData.T
-}
-
-type LoggedInEnv = {
-    connect_info: ConnectionInfo
-    nick: NickData.T
-    nicks: NickObj list
-}
-
-type SearchAction = {
-    listen_info: ListenInfo
-    search_str: string
-}
-
-// higher-order domain models
-type DcppReceiveMessage = 
-| Lock of LockMessage
-| ValidateDenied 
-| GetPass
-| BadPass
-| Hello of HelloMessage  //TODO change handler for Hello
-| LoggedIn
-| NickList of NickListMessage
-| OpList of OpListMessage
-| Quit of QuitMessage
-| HubTopic of HubTopicMessage
-| HubName of HubNameMessage
-| ChatMessage of ChatMessageMessage
-| MyInfo of MyInfoMessage
-| Ignore_
-
-type DcppSendMessage = 
-| ValidateNick of ValidateNickMessage
-| MyPass of MyPassMessage
-| Version
-| MyInfo of MyInfoMessage
-| Search of SearchMessage
-
-type AgentAction =
-| Connect of ConnectionInfo
-// | SendMyInfo
-| SendNick of NickData.T * KeyData.T 
-| SendPass of PasswordData.T
-| RetryNick of NickData.T
-| Helloed of NickData.T
-| Disconnected
-| Disconnect
-| NickListed of NickData.T list
-| OpListed of NickData.T list
-| Quitted of NickData.T
-| MyInfoed of NickData.T * NickInfo
-| Search of SearchAction
-
-type State = 
-| NotConnected
-| Connected          of ConnectedEnv
-| WaitingForAuth     of WaitingForAuthEnv
-| WaitingForPassAuth of WaitingForPassAuthEnv
-| LoggedIn           of LoggedInEnv
-
-// infrastructure interfaces
 type ILogger =
     abstract Trace: fmt: Printf.StringFormat<'a, unit> -> 'a
     abstract TraceException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
@@ -424,9 +286,131 @@ type ILogger =
     abstract ErrorException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
     abstract Fatal: fmt: Printf.StringFormat<'a, unit> -> 'a
     abstract FatalException: e: Exception -> fmt: Printf.StringFormat<'a, unit> -> 'a
-type CreateLogger = unit -> ILogger 
-type ITransport = 
-    inherit IDisposable 
+type CreateLogger = unit -> ILogger
+
+// domain models
+type UserInfo = { share_size: PositiveInt.T }
+
+type User =
+    { nick: NickData.T
+    ; user_info: UserInfo option
+    ; is_Op: bool }
+
+// domain models (for Dcpp messages)
+type LockMessage =
+    { lock: LockData.T
+    ; pk: PkData.T }
+
+type HelloMessage = { nick: NickData.T }
+
+type ValidateNickMessage =
+    { key: KeyData.T
+    ; nick: NickData.T }
+
+type MyPassMessage = { password: PasswordData.T }
+
+type MyInfoMessage =
+    { nick: NickData.T
+    ; share_size: PositiveInt.T }
+
+type NickListMessage = { nicks: NickData.T list }
+
+type OpListMessage = { nicks: NickData.T list }
+
+type QuitMessage = { nick: NickData.T }
+
+type ChatMessageMessage =
+    { nick: NickData.T
+    ; message: string }
+
+type HubTopicMessage = { topic: string }
+
+type HubNameMessage = { name: string }
+
+type SearchMessage =
+    { listen_info: ListenInfo
+    ; search_str: string }
+
+// domain models (for State environments)
+type ConnectedEnv = { connect_info: ConnectionInfo }
+
+type WaitingForAuthEnv =
+    { connect_info: ConnectionInfo
+    ; nick: NickData.T
+    ; key: KeyData.T }
+
+type WaitingForPassAuthEnv =
+    { connect_info: ConnectionInfo
+    ; nick: NickData.T
+    ; password: PasswordData.T }
+
+type LoggedInEnv =
+    { connect_info: ConnectionInfo
+    ; nick: NickData.T
+    ; users: User list }
+
+// domain models (for Action environments)
+type SearchAction =
+    { listen_info: ListenInfo
+    ; search_str: string }
+
+// higher-order domain models
+type DcppReceiveMessage =
+| Lock of LockMessage
+| ValidateDenied
+| GetPass
+| BadPass
+| Hello of HelloMessage  //TODO change handler for Hello
+| LoggedIn
+| NickList of NickListMessage
+| OpList of OpListMessage
+| Quit of QuitMessage
+| HubTopic of HubTopicMessage
+| HubName of HubNameMessage
+| ChatMessage of ChatMessageMessage
+| MyInfo of MyInfoMessage
+| IgnoreIt
+
+type DcppSendMessage =
+| ValidateNick of ValidateNickMessage
+| MyPass of MyPassMessage
+| Version
+| MyInfo of MyInfoMessage
+| Search of SearchMessage
+
+type SendAction =
+| SendNick of NickData.T * KeyData.T
+| SendPass of PasswordData.T
+| RetryNick of NickData.T
+| Search of SearchAction
+
+/// Actions which are available only for LoggedIn state
+type MainAction = 
+| NickListed of NickData.T list
+| OpListed of NickData.T list
+| Quitted of NickData.T
+| MyInfoed of NickData.T * UserInfo
+
+type AgentAction =
+| Send of SendAction
+| Main of MainAction
+| Helloed of NickData.T
+| Connect of ConnectionInfo
+| Disconnected
+| Disconnect
+
+type State =
+| NotConnected
+| Connected          of ConnectedEnv
+| WaitingForAuth     of WaitingForAuthEnv
+| WaitingForPassAuth of WaitingForPassAuthEnv
+| LoggedIn           of LoggedInEnv
+
+type ReceivedHandlerEnv = { nick: NickData.T }
+
+// presentation interfaces
+type ITransport =
+    inherit IDisposable
     abstract Received: IObservable<DcppReceiveMessage>
     abstract Write: DcppSendMessage -> unit
 type CreateTransport = ConnectionInfo -> Result<ITransport, TransportError>
@@ -435,8 +419,9 @@ type Dependencies = {
     transport: ITransport
 }
 
-// infrastructure functions 
+type Agent = AgentWithComplexState.T<AgentAction, State*Dependencies option, (ActionError*AgentAction*State)>
 
+// presentation functions
 let DCNstring_to_DcppMessage input =
     Result.success_workflow_with_string_failures {
         match input with
@@ -445,23 +430,23 @@ let DCNstring_to_DcppMessage input =
             return Hello { nick = nick_data }
         | Regex "^\$Quit (.+)\|$" [ nick ] ->
             let! nick_data = NickData.create nick
-            return Quit { nick = nick_data }            
-        | Regex "^\$BadPass\|$" [] -> 
+            return Quit { nick = nick_data }
+        | Regex "^\$BadPass\|$" [] ->
             return BadPass
-        | Regex "^\$GetPass\|$" [] -> 
+        | Regex "^\$GetPass\|$" [] ->
             return GetPass
-        | Regex "^\$ValidateDenide\|$" [] -> 
+        | Regex "^\$ValidateDenide\|$" [] ->
             return ValidateDenied
         | Regex "^\$Lock (.+) Pk=(.+)\|$" [ lock; pk ] ->
             let! lock_data = LockData.create << DCNtoString <| lock
-            let! pk_data = PkData.create pk // TODO check for what fields DCN encoding/decoding should be happening 
+            let! pk_data = PkData.create pk // TODO check for what fields DCN encoding/decoding should be happening
             return Lock {
                 lock = lock_data
-                pk = pk_data 
+                pk = pk_data
             }
         | Regex "^\$MyINFO \$ALL (.+?) .*\$(.*?)\$\|$" [ nick_str; share_size_str ] ->
             let! nick_data = NickData.create nick_str
-            let! share_size =  
+            let! share_size =
                 if share_size_str = String.Empty then
                     PositiveInt.fromULong 0UL |> Success
                 else
@@ -478,7 +463,7 @@ let DCNstring_to_DcppMessage input =
                 |> Seq.map NickData.create
                 |> Seq.choose (Result.fold Some (ct None))
                 |> List.ofSeq
-            
+
             return NickList {
                 nicks = nicks
             }
@@ -489,18 +474,18 @@ let DCNstring_to_DcppMessage input =
                 |> Seq.map NickData.create
                 |> Seq.choose (Result.fold Some (ct None))
                 |> List.ofSeq
-            
+
             return OpList {
                 nicks = nicks
             }
         | Regex "^\$HubTopic (.+)\|$" [topic] ->
-            return HubTopic { 
+            return HubTopic {
                 topic = topic
             }
         | Regex "^\$HubName (.+)\|$" [hubname] ->
-            return HubName { 
+            return HubName {
                 name = hubname
-            }            
+            }
         | Regex "^\<(.+?)\>\s((\s|.)*)\|$" [nick_str; message; _] ->
             let! nick = NickData.create nick_str
             return ChatMessage {
@@ -508,13 +493,13 @@ let DCNstring_to_DcppMessage input =
                 message = message
             }
         | Regex "^\$Search .*\|$" [] ->
-            return Ignore_
-        | _ -> 
+            return IgnoreIt
+        | _ ->
             return! Failure "Couldn't parse"
     }
     |> Result.mapFailure (fun e -> e, input)
 
-let DcppMessage_to_bytes dcpp_message = 
+let DcppMessage_to_bytes dcpp_message =
     match dcpp_message with
     | DcppSendMessage.Search s_msg ->
         [
@@ -529,7 +514,7 @@ let DcppMessage_to_bytes dcpp_message =
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
-    | DcppSendMessage.MyPass mp_msg -> 
+    | DcppSendMessage.MyPass mp_msg ->
         [
             "$MyPass " |> getBytes |> Result.get;
             PasswordData.fold ASCIIString.getBytes mp_msg.password;
@@ -538,7 +523,7 @@ let DcppMessage_to_bytes dcpp_message =
         |> Array.concat
 
     | DcppSendMessage.ValidateNick vn_msg ->
-        [ 
+        [
             "$Key " |> getBytes |> Result.get;
             KeyData.unwrap vn_msg.key;
             "|$ValidateNick " |> getBytes |> Result.get;
@@ -560,365 +545,315 @@ let DcppMessage_to_bytes dcpp_message =
         |> Array.concat
 
 // domain logic (functions)
+[<AutoOpen>]
+module UserModule = 
+    let add_nonexisting_nick nick' users =
+        { nick = nick'; user_info = None; is_Op = false }::users
+
+    let add_nick nick' (users: User list) =
+        //TODO OMG THAT MUST BE SLOW
+        let already_there = users |> List.exists (fun user -> nick' = user.nick)
+        if not already_there then add_nonexisting_nick nick' users
+        else users
+
+    let add_nicks nicks =
+        nicks |> List.fold (fun users nick -> add_nick nick users) []
+
+    let remove_nick nick (users: User list) =
+        //TODO OMG THAT MUST BE SLOW
+        List.filter (fun (user: User) -> user.nick <> nick) users
+
+    let add_nick_with_info nick user_info users =
+        //TODO OMG THAT MUST BE SLOW
+        let exists = List.exists (fun (user: User) -> user.nick = nick) users
+        if exists then
+            users |> List.map (fun user ->
+                if user.nick = nick then { user with user_info = user_info }
+                else user
+            )
+        else
+            {nick = nick; user_info = user_info; is_Op = false}::users
+
+    let mark_nick_as_op nick users =
+        let exists = List.exists (fun (user: User) -> user.nick = nick) users
+        if exists then
+            users |> List.map (fun user ->
+                if user.nick = nick then { user with is_Op = true }
+                else user
+            )
+        else
+            {nick = nick; user_info = None; is_Op = true}::users
+
 let private validate_state (state, deps) =
     match (state, deps) with
-    | NotConnected, _ -> 
+    | NotConnected, _ ->
         Success ()
     | _, None ->
         // this is a programming error if we get here. should never-ever happen
         Failure InvalidState
-    | _ -> 
+    | _ ->
         Success ()
 
-let private connect (create_transport: CreateTransport) connect_info state =
-    match state with
-    | NotConnected ->
-        create_transport connect_info
-        |> Result.mapFailure ActionError.TransportError
-        |> Result.mapSuccess (fun transport -> Connected { connect_info = connect_info }, transport)
-    | _ -> 
-        Failure InvalidAction
-
-let private disconnect deps_maybe = 
+let private disconnect deps_maybe =
     deps_maybe
     |> Option.map (fun deps -> deps.transport.Dispose())
     |> ignore
 
     (NotConnected, None)
 
-let private add_nonexisting_nick nick' nicks = 
-    { nick = nick'; nick_info = None; is_Op = false }::nicks
+let private dispatch_send_action action (state, deps) =
+    match action, state with
+    | Search action, LoggedIn env ->
+        let msg = DcppSendMessage.Search { listen_info = action.listen_info; search_str = action.search_str }
 
-let private add_nick nick' (nicks: NickObj list) =
-    //TODO OMG THAT MUST BE SLOW
-    let already_there = nicks |> List.exists (fun nick_obj -> nick' = nick_obj.nick)
-    if not already_there then add_nonexisting_nick nick' nicks
-    else nicks
+        deps.transport.Write msg
 
-let private add_nicks nicks = 
-    nicks |> List.fold (fun acc nick -> add_nick nick acc) []
+        state |> Success
+    | SendNick (nick, key), Connected env ->
+        let msg = ValidateNick { nick = nick; key = key }
 
-let private remove_nick nick (nicks: NickObj list) =
-    //TODO OMG THAT MUST BE SLOW
-    List.filter (fun (nick_obj: NickObj) -> nick_obj.nick <> nick) nicks 
+        deps.transport.Write msg
 
-let private add_nick_with_info nick nick_info nicks = 
-    //TODO OMG THAT MUST BE SLOW
-    let exists = List.exists (fun (nick_obj: NickObj) -> nick_obj.nick = nick) nicks
-    if exists then
-        nicks |> List.map (fun nick_obj -> 
-            if nick_obj.nick = nick then { nick_obj with nick_info = nick_info }
-            else nick_obj
-        )
-    else
-        {nick = nick; nick_info = nick_info; is_Op = false}::nicks
-    
-let private mark_nick_as_op nick nicks = 
-    let exists = List.exists (fun (nick_obj: NickObj) -> nick_obj.nick = nick) nicks
-    if exists then
-        nicks |> List.map (fun nick_obj -> 
-            if nick_obj.nick = nick then { nick_obj with is_Op = true }
-            else nick_obj
-        )
-    else
-        {nick = nick; nick_info = None; is_Op = true}::nicks
+        let state' = WaitingForAuth {
+            connect_info = env.connect_info
+            nick = nick
+            key = key
+        }
+        Success state'
+    | SendPass pass, WaitingForAuth env ->
+        let msg = MyPass { password = pass }
+
+        deps.transport.Write msg
+
+        let state' = WaitingForPassAuth {
+            connect_info = env.connect_info
+            nick = env.nick
+            password = pass
+        }
+        Success state'
+    | RetryNick nick', WaitingForAuth env ->
+        let msg = DcppSendMessage.ValidateNick {
+            nick = nick'
+            key = env.key
+        }
+
+        deps.transport.Write msg
+
+        let state' = WaitingForAuth { env with nick = nick' }
+        Success state'
+    | _, _ ->
+        Failure InvalidAction
+
+let private dispatch_main_action action env =
+    match action with
+    | MyInfoed (nick', nick_info') ->
+        let nicks' = (add_nick_with_info nick' (Some nick_info') env.users)
+        Success { env with users = nicks' }
+
+    | Quitted nick' ->
+        Success { env with users = (remove_nick nick' env.users) }
+
+    | NickListed nicks' ->
+        Success { env with users = add_nicks nicks' }
+    | OpListed nicks->
+        let nicks' = nicks |> List.fold (fun nicks' nick -> mark_nick_as_op nick nicks') env.users
+        Success { env with users = nicks' } 
+
+let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_workflow {
+    match state with 
+    | WaitingForAuth { nick = nick }
+    | WaitingForPassAuth { nick = nick }
+        when nick' <> nick ->
+            return state
+    | WaitingForAuth { connect_info = ci; nick = nick }
+    | WaitingForPassAuth { connect_info = ci; nick = nick } ->
+        let myinfo_msg = DcppSendMessage.MyInfo {nick = nick; share_size = PositiveInt.fromULong 0UL}
+        // we are almost logged in, just need to send $Version and $MyINFO
+        let! deps = Result.fromOption deps_maybe DepsAreMissing
+        deps.transport.Write Version
+        deps.transport.Write myinfo_msg
+
+        return LoggedIn { connect_info = ci; nick = nick; users = []}
+    | LoggedIn env ->
+        return LoggedIn { env with users = (add_nick nick' env.users) }
+    | _ ->
+        return! Failure InvalidAction
+}
 
 let private dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
     let log = create_log()
     log.Trace "Dispatching action %A" action
 
-    validate_state (state, deps_maybe) 
-    |> Result.collect (fun _ ->
-        match action with
-        | AgentAction.Search action ->
-            // TODO group all sendmessage actions into one group
-            deps_maybe
-            |> Result.fromOption <| DepsAreMissing
-            |> Result.bind <| (fun deps ->
-                match state with
-                | LoggedIn env ->
-                    let msg = DcppSendMessage.Search { listen_info = action.listen_info; search_str = action.search_str }
+    Result.success_workflow {
+        do! validate_state (state, deps_maybe)
+        match action, state with
+        | Disconnect, _
+        | Disconnected, _ ->
+            return disconnect deps_maybe
 
-                    deps.transport.Write msg
-                    state |> Success
-                | _ -> 
-                    Failure InvalidAction
-            )
-            |> Result.map (fun state' -> state', deps_maybe)
-        | AgentAction.SendNick (nick, key) ->
-            let msg = ValidateNick { nick = nick; key = key }
+        | Send send_action, _ ->
+            let! deps = Result.fromOption deps_maybe DepsAreMissing
+            let! state' = dispatch_send_action send_action (state, deps)
+            return state', deps_maybe
 
-            deps_maybe
-            |> Result.fromOption <| DepsAreMissing
-            |> Result.bind <| (fun deps -> 
-                match state with
-                | Connected env ->
-                    deps.transport.Write msg
-                    let state' = WaitingForAuth {
-                        connect_info = env.connect_info
-                        nick = nick
-                        key = key
-                    }
-                    state' |> Success
-                | _ -> 
-                    Failure InvalidAction
-            ) 
-            |> Result.map (fun state' -> state', deps_maybe)
-        | AgentAction.SendPass (pass) ->
-            let msg = MyPass { password = pass }
+        | Connect ci, NotConnected ->
+            let! transport =
+                create_transport ci
+                |> Result.mapFailure ActionError.TransportError
 
-            let res = 
-                deps_maybe
-                |> Result.fromOption <| DepsAreMissing
-                |> Result.bind <| (fun deps ->
-                    match state with
-                    | WaitingForAuth env ->
-                        deps.transport.Write msg
-                        WaitingForPassAuth {
-                            connect_info = env.connect_info
-                            nick = env.nick
-                            password = pass
-                        } |> Success
-                    | _ ->
-                        Failure InvalidAction
-                )
-            res
-            |> Result.map (fun state' -> state', deps_maybe)
+            let state' = Connected { connect_info = ci }
 
-        | AgentAction.Connect ci ->
-            connect create_transport ci state
-            |> Result.map (fun (state', transport) ->
-                let deps' = 
-                    match deps_maybe with
-                    | None -> { transport = transport }
-                    | Some deps -> { deps with transport = transport }
-                
-                state', Some deps'
-            )
-        | AgentAction.RetryNick nick' ->
-            match state with 
-            | WaitingForAuth env ->
-                deps_maybe
-                |> Result.fromOption <| DepsAreMissing
-                |> Result.map (fun deps ->
-                    deps.transport.Write << DcppSendMessage.ValidateNick <| {
-                        nick = nick'
-                        key = env.key
-                    } 
-                    WaitingForAuth { env with nick = nick' }
-                )
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
+            let deps' =
+                match deps_maybe with
+                | None -> { transport = transport }
+                | Some deps -> { deps with transport = transport }
 
-        | AgentAction.Helloed nick' ->
-            match state with
-            | WaitingForAuth { connect_info = ci; nick = nick }
-            | WaitingForPassAuth { connect_info = ci; nick = nick } ->
-                if nick' <> nick then    
-                    // ignoring not "ours" Hello messages 
-                    state |> Success
-                else
-                    let myinfo_msg = DcppSendMessage.MyInfo {nick = nick; share_size = PositiveInt.fromULong 0UL}
-                    // we are almost logged in, just need to send $Version and $MyINFO
-                    deps_maybe
-                    |> Result.fromOption <| DepsAreMissing
-                    |>! Result.map (fun deps -> deps.transport.Write (DcppSendMessage.Version))
-                    |>! Result.map (fun deps -> deps.transport.Write myinfo_msg)
-                    |> Result.map (fun _ -> LoggedIn { connect_info = ci; nick = nick; nicks = []})  
-            | LoggedIn env ->
-                LoggedIn { env with nicks = (add_nick nick' env.nicks) } |> Success
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
+            return state', Some deps'
 
-        | AgentAction.MyInfoed (nick', nick_info') ->
-            match state with
-            | LoggedIn env ->
-                let nicks' = (add_nick_with_info nick' (Some nick_info') env.nicks)
-                LoggedIn { env with nicks = nicks' } |> Success
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
+        | Helloed nick, _ ->
+            let! state' = dispatch_helloed_message nick (state, deps_maybe)
+            return state', deps_maybe
 
-        | AgentAction.Quitted nick' ->
-            match state with
-            | LoggedIn env ->
-                LoggedIn { env with nicks = (remove_nick nick' env.nicks) } |> Success
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
+        | Main m_action, LoggedIn env ->
+            let! env' = dispatch_main_action m_action env
+            return LoggedIn env', deps_maybe 
 
-        | AgentAction.NickListed nicks' ->
-            match state with
-            | LoggedIn env ->
-                LoggedIn { env with nicks = add_nicks nicks' } |> Success
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
-        
-        | AgentAction.OpListed nicks ->
-            match state with
-            | LoggedIn env ->
-                let nicks' = nicks |> List.fold (fun nicks' nick -> mark_nick_as_op nick nicks') env.nicks
-                LoggedIn { env with nicks = nicks' } |> Success
-            | _ -> 
-                Failure InvalidAction
-            |> Result.map (fun state' -> state', deps_maybe)
-
-        | AgentAction.Disconnect
-        | AgentAction.Disconnected ->
-            disconnect deps_maybe |> Success
-    )
+        | _, _ ->
+            return! Failure InvalidAction
+    }
     |> Result.mapFailure (fun e -> e, action, state)
     |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
 
-let private handle_agent (create_log: CreateLogger) await_terminator connect_info (nick_data, pass_data_maybe) (agent: AgentWithComplexState.T<AgentAction, State*Dependencies option, 'c>) =
+let private handle_received_message (create_log: CreateLogger) pass_data_maybe (agent: Agent) (env: ReceivedHandlerEnv) dcpp_msg =
     let log = create_log()
+    log.Trace "Received message %A" dcpp_msg
+    match dcpp_msg with
+    | Lock msg ->
+        agent.post << Send <| SendNick (env.nick, KeyData.create msg.lock)
+        env
+    | ValidateDenied ->
+        let nick' =
+            env.nick
+            |> NickData.unwrap
+            |> ASCIIString.unwrap
+            |> (+) <| "1"
+            |> NickData.create
+            |>! Result.mapFailure (fun e -> log.Error "Could not create new nick from old nick %A: %A" env.nick e)
+            |>! Result.map (fun nick' -> agent.post << Send << RetryNick <| nick')
+            |> Result.fold id (ct env.nick)
+        { env with nick = nick' }
+    | Hello msg ->
+        let res =
+            agent.post_and_reply << Helloed <| msg.nick
+            |> (Result.fold
+                <| ignore
+                <| (fun e ->
+                    // TODO fix this will trigger even for usual Hellos, not for the one which confirms our login
+                    log.Error "Could not finish logging in, disconnecting: %A" e
+                    agent.post <| Disconnect
+                    ))
+        env
+    | DcppReceiveMessage.MyInfo msg ->
+        agent.post << Main <| MyInfoed (msg.nick, { share_size = msg.share_size })
+        env
+    | Quit msg ->
+        agent.post << Main << Quitted <| msg.nick
+        env
+    | GetPass ->
+        match pass_data_maybe with
+        | None ->
+            // TODO terminate everything somehow ?
+            log.Error "Server asks for password but we don't have any"
+        | Some pass_data ->
+            agent.post << Send <| SendPass pass_data
+        env
+    | BadPass ->
+        log.Error "BadPass for nick %A" env.nick
+        agent.post AgentAction.Disconnected
+        env
+    | DcppReceiveMessage.LoggedIn ->
+        // WILL it is related to Op users, we dont care about them for a moment
+        env
+    | ChatMessage msg ->
+        log.Trace "Chat message from %A: %s" msg.nick msg.message
+        env
+    | HubTopic msg ->
+        log.Info "Hub topic: %s" msg.topic
+        env
+    | HubName msg ->
+        log.Info "Hub name: %s" msg.name
+        env
+    | NickList msg ->
+        agent.post << Main <| NickListed msg.nicks
+        env
+    | OpList msg ->
+        agent.post << Main <| OpListed msg.nicks
+        env
+    | IgnoreIt ->
+        env
 
+let private handle_agent (create_log: CreateLogger) callback connect_info (nick_data, pass_data_maybe) (agent: Agent) =
+    let log = create_log()
     log.Trace "We are inside agent now!"
+
+    let handle_received_message_applied = handle_received_message create_log pass_data_maybe agent
 
     // data transformation for convenience
     let full_state_events = agent.state_changed
-    let state_changed = 
-        agent.state_changed 
-        |> Event.map (fun ((state, _), (state', _)) ->
-            (state, state')
-        )
+    let state_events =
+        agent.state_changed
+        |> Event.map (fun ((state, _), (state', _)) -> (state, state'))
         |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
 
-    // handling received dcpp messages
-    full_state_events 
-    |> Event.choose (
+    full_state_events |> Event.add (
         function
-        | (NotConnected, _), (Connected ci, Some deps) -> (ci, deps) |> Some
-        | _ -> None)
-    |>! Event.add (fun (ci, deps) -> log.Info "Connected to (%A)" ci) 
-    |> Event.add (fun (ci, deps) -> 
-        // TODO think about disposing event handling after disconnect ? 
-        deps.transport.Received
-        |> Control.Observable.scan (fun nick dcpp_msg ->
-            log.Trace "Received message %A" dcpp_msg
-            match dcpp_msg with
-            | Lock msg ->
-                agent.post <| SendNick (nick_data, KeyData.create msg.lock) 
-                nick
-            | ValidateDenied ->
-                let nick' = 
-                    nick
-                    |> NickData.unwrap
-                    |> ASCIIString.unwrap
-                    |> (+) <| "1"
-                    |> NickData.create 
-                    |>! Result.mapFailure (fun e -> log.Error "Could not create new nick from old nick %A: %A" nick e)
-                    |>! Result.map (fun nick' -> agent.post << RetryNick <| nick') 
-                    |> Result.fold id (ct nick)  
-                nick'
-            | Hello msg ->
-                let res = 
-                    agent.post_and_reply << Helloed <| msg.nick
-                    |> (Result.fold 
-                        <| ignore
-                        <| (fun e -> 
-                            // TODO fix this will trigger even for usual Hellos, not for the one which confirms our login
-                            log.Error "Could not finish logging in, disconnecting: %A" e
-                            agent.post <| Disconnect
-                            ))
-                nick
-            | DcppReceiveMessage.MyInfo msg ->
-                agent.post <| MyInfoed (msg.nick, { share_size = msg.share_size })
-                nick
-            | Quit msg ->
-                agent.post << Quitted <| msg.nick
-                nick
-            | GetPass ->
-                match pass_data_maybe with
-                | None -> 
-                    // TODO terminate everything somehow ?
-                    log.Error "Server asks for password but we don't have any"
-                | Some pass_data ->
-                    agent.post <| SendPass pass_data
-                nick
-            | BadPass ->
-                log.Error "BadPass for nick %A" nick
-                agent.post AgentAction.Disconnected
-                nick
-            | DcppReceiveMessage.LoggedIn ->
-                // WILL it is related to Op users, we dont care about them for a moment
-                nick
-            | ChatMessage msg ->
-                log.Trace "Chat message from %A: %s" msg.nick msg.message
-                nick
-            | HubTopic msg ->
-                log.Info "Hub topic: %s" msg.topic
-                nick
-            | HubName msg ->
-                log.Info "Hub name: %s" msg.name
-                nick
-            | NickList msg ->
-                agent.post <| NickListed msg.nicks
-                nick
-            | OpList msg ->
-                agent.post <| OpListed msg.nicks
-                nick
-            | Ignore_ ->
-                nick
-        ) nick_data
-        |> Observable.subscribeWithCompletion ignore (fun () -> 
-            log.Warn "Disconnected"
-            agent.post AgentAction.Disconnected
-        )
-        |> ignore
-    )
+        | (NotConnected, _), (Connected ci, Some deps) ->
+            log.Info "Connected to %A" ci
 
-    state_changed |> Event.add (
-        function
-        | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn env' -> log.Info "Successfully logged in as %A" env'.nick
+            // handling received dcpp messages
+            deps.transport.Received
+            |> Control.Observable.scan handle_received_message_applied { nick = nick_data }
+            |> Observable.subscribeWithCompletion ignore (fun () ->
+                log.Warn "Disconnected from %A" ci
+                agent.post Disconnected
+            )
+            |> ignore // it is ok not to dispose the subscription here - the IObservable will be disposed instead
         | _ -> ()
     )
 
-    // handling reconnection
-    state_changed 
-    |> Event.filter (
+    state_events |> Event.add (
         function
-        | _, NotConnected -> true
-        | _ -> false)
-    |> Event.add (fun _ ->
-        log.Info "Disconnected" 
-        log.Info "Connecting to (%A)..." connect_info
-        agent.post_and_reply <| Connect connect_info
-        |> Result.mapFailure (log.Error "Couldnt connect %A")
-        |> Result.map (log.Info "Reconnected %A")
-        |> ignore
+        | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn env' ->
+            log.Info "Successfully logged in as %A" env'.nick
+        | _, NotConnected ->
+            log.Info "Disconnected"
+
+            log.Info "Connecting to %A..." connect_info
+            agent.post_and_reply <| Connect connect_info
+            |> Result.mapFailure (log.Error "Couldnt connect %A")
+            |> Result.map (log.Info "Reconnected %A")
+            |> ignore
+        | _ -> ()
     )
 
-    // connecting to the server
-    log.Info "Connecting to (%A)..." connect_info
-    let connectResult = agent.post_and_reply <| Connect connect_info
-
-    // waiting for external termination
-    match connectResult with
-    | Failure e ->
-        CouldntConnect e |> Failure
-    | Success actionResult -> 
-        let res = await_terminator(agent) |> Async.RunSynchronously |> Success
-
-        agent.fetch()
-        |> Result.map snd
-        |> Result.map (Option.map (fun deps -> deps.transport.Dispose()))
-        |> ignore
-
-        res
+    log.Info "Connecting to %A..." connect_info
+    agent.post_and_reply <| Connect connect_info
+    |> Result.mapFailure CouldntConnect
+    |> Result.map (fun _ ->
+        try
+            callback(agent)
+        finally
+            agent.post <| Disconnect
+    )
 
 let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =
     let log = create_log()
     log.Info "Starting queue..."
-    
+
     let dispatch_action_applied = dispatch_action create_log create_transport
     let handle_agent_applied = handle_agent create_log await_terminator connect_info (nick_data, pass_data_maybe)
 
-    AgentWithComplexState.loop 
-    <| (State.NotConnected, None) 
+    AgentWithComplexState.loop
+    <| (State.NotConnected, None)
     <| dispatch_action_applied
     <| handle_agent_applied
-    

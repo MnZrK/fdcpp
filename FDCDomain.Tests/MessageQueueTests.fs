@@ -236,7 +236,7 @@ module ``startQueue Tests`` =
                 test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
                     connect_info = connect_info
                     nick = nick_data
-                    nicks = [] } @>
+                    users = [] } @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -299,7 +299,7 @@ module ``startQueue Tests`` =
                 test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
                     connect_info = connect_info
                     nick = nick_data'
-                    nicks = [] } @>
+                    users = [] } @>
             })
             <| connect_info
             <| (nick_data, None)
@@ -363,7 +363,7 @@ module ``startQueue Tests`` =
                 test <@ agent.fetch() |> Result.get |> fst = LoggedIn { 
                     connect_info = connect_info
                     nick = nick_data
-                    nicks = [] } @>
+                    users = [] } @>
             })
             <| connect_info
             <| (nick_data, Some pass_data)
