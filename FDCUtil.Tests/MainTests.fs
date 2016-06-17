@@ -15,6 +15,46 @@ open FDCTestHelper.FsCheckExtensions
 
 open FDCUtil.Main
 
+let generate_stream_from_string (s: string) = 
+    let stream = new IO.MemoryStream()
+    let writer = new IO.StreamWriter(stream)
+    writer.Write(s)
+    writer.Flush()
+    stream.Position <- 0L
+    stream
+
+[<Fact>]
+let ``Should parse stream`` () = 
+    let input = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|<Bender-Nsk-2> ????? ??????: 45 ???? 10 ????? 48 ????? 18 ??????. ????????????? ??????: 27159|$HubName CN.Peers|$Hello MnZrKk|"
+
+    let stream = generate_stream_from_string input
+    let eom_marker = Convert.ToByte '|'
+
+    let sequence = read_message_seq 256 eom_marker stream
+    
+    let arr = sequence |> Seq.toArray |> Array.map System.Text.Encoding.ASCII.GetString
+    
+    test <@ arr.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
+    test <@ arr.[1] = "<Bender-Nsk-2> ????? ??????: 45 ???? 10 ????? 48 ????? 18 ??????. ????????????? ??????: 27159|" @>
+    test <@ arr.[2] = "$HubName CN.Peers|" @>
+    test <@ arr.[3] = "$Hello MnZrKk|" @>  
+
+[<Fact>]
+let ``Should parse stream from several pieces`` () = 
+    let input = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|<Bender-Nsk-2> ????? ??????: 45 ???? 10 ????? 48 ????? 18 ??????. ????????????? ??????: 27159|$HubName CN.Peers|$Hello MnZrKk|"
+
+    let stream = generate_stream_from_string input
+    let eom_marker = Convert.ToByte '|'
+
+    let sequence = read_message_seq 16 eom_marker stream
+    
+    let arr = sequence |> Seq.toArray |> Array.map System.Text.Encoding.ASCII.GetString
+    
+    test <@ arr.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
+    test <@ arr.[1] = "<Bender-Nsk-2> ????? ??????: 45 ???? 10 ????? 48 ????? 18 ??????. ????????????? ??????: 27159|" @>
+    test <@ arr.[2] = "$HubName CN.Peers|" @>
+    test <@ arr.[3] = "$Hello MnZrKk|" @>  
+
 [<Fact>]
 let ``Should call once and only once function produced by 'callable_once'`` () =
     let number_of_times_called = ref 0
@@ -424,3 +464,5 @@ module ``Regex Tests`` =
             | _ -> None
 
         test <@ result = None @>
+
+    

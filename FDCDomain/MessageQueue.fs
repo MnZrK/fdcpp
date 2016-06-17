@@ -672,9 +672,8 @@ let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_
         return! Failure InvalidAction
 }
 
-let private dispatch_action (create_log: CreateLogger) (create_transport: CreateTransport) action (state, deps_maybe) =
-    let log = create_log()
-    log.Trace "Dispatching action %A" action
+let private dispatch_action (log: ILogger) (create_transport: CreateTransport) action (state, deps_maybe) =
+    // log.Trace "Dispatching action %A" action
 
     Result.success_workflow {
         do! validate_state (state, deps_maybe)
@@ -716,9 +715,8 @@ let private dispatch_action (create_log: CreateLogger) (create_transport: Create
     |> Result.mapFailure (fun e -> e, action, state)
     |>! Result.mapFailure (fun x -> log.Error "Error while dispatching action: %A" x)
 
-let private handle_received_message (create_log: CreateLogger) pass_data_maybe (agent: Agent) (env: ReceivedHandlerEnv) dcpp_msg =
-    let log = create_log()
-    log.Trace "Received message %A" dcpp_msg
+let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent) (env: ReceivedHandlerEnv) dcpp_msg =
+    // log.Trace "Received message %A" dcpp_msg
     match dcpp_msg with
     | Lock msg ->
         agent.post << Send <| SendNick (env.nick, KeyData.create msg.lock)
@@ -735,6 +733,7 @@ let private handle_received_message (create_log: CreateLogger) pass_data_maybe (
             |> Result.fold id (ct env.nick)
         { env with nick = nick' }
     | Hello msg ->
+        log.Info "User %A has enterred" msg.nick
         let res =
             agent.post_and_reply << Helloed <| msg.nick
             |> (Result.fold
@@ -749,6 +748,7 @@ let private handle_received_message (create_log: CreateLogger) pass_data_maybe (
         agent.post << Main <| MyInfoed (msg.nick, { share_size = msg.share_size })
         env
     | Quit msg ->
+        log.Info "User %A has quitted" msg.nick
         agent.post << Main << Quitted <| msg.nick
         env
     | GetPass ->
@@ -784,18 +784,17 @@ let private handle_received_message (create_log: CreateLogger) pass_data_maybe (
     | IgnoreIt ->
         env
 
-let private handle_agent (create_log: CreateLogger) callback connect_info (nick_data, pass_data_maybe) (agent: Agent) =
-    let log = create_log()
+let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_data_maybe) (agent: Agent) =
     log.Trace "We are inside agent now!"
 
-    let handle_received_message_applied = handle_received_message create_log pass_data_maybe agent
+    let handle_received_message_applied = handle_received_message log pass_data_maybe agent
 
     // data transformation for convenience
     let full_state_events = agent.state_changed
     let state_events =
         agent.state_changed
         |> Event.map (fun ((state, _), (state', _)) -> (state, state'))
-        |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
+        // |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
 
     full_state_events |> Event.add (
         function
@@ -838,12 +837,11 @@ let private handle_agent (create_log: CreateLogger) callback connect_info (nick_
             agent.post <| Disconnect
     )
 
-let start_queue (create_log: CreateLogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =
-    let log = create_log()
+let start_queue (log: ILogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =
     log.Info "Starting queue..."
 
-    let dispatch_action_applied = dispatch_action create_log create_transport
-    let handle_agent_applied = handle_agent create_log await_terminator connect_info (nick_data, pass_data_maybe)
+    let dispatch_action_applied = dispatch_action log create_transport
+    let handle_agent_applied = handle_agent log await_terminator connect_info (nick_data, pass_data_maybe)
 
     AgentWithComplexState.loop
     <| (State.NotConnected, None)

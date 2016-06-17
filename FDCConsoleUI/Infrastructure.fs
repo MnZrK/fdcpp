@@ -18,7 +18,6 @@ type IRawTransport =
     abstract Close: unit -> unit
 
 module TcpStream = 
-
     type Error = 
     | CouldntConnect of string
 
@@ -38,27 +37,6 @@ module TcpStream =
                         ex.Message
                 |> Failure
     }
-
-    let private read_message_async eom_marker (stream: System.Net.Sockets.NetworkStream) = 
-        let rec loop reversed_msg = async {
-            // throws EndOfStreamException when connection is closed by remote side 
-            //  (but it isn't thrown on this line for some reason)
-            //  so have to catch it later
-            let! bytes = stream.AsyncRead(1) 
-
-            if bytes.[0] = eom_marker then
-                return List.rev (bytes.[0]::reversed_msg) |> List.toArray
-            else
-                return! loop (bytes.[0]::reversed_msg)
-        }
-        async {
-            try
-                let! msg = loop []
-                return Some msg
-            with 
-            | :? IO.EndOfStreamException -> // means the connection was closed
-                return None 
-        }
 
     let start_async eom_marker (host: string) (port: int) = AsyncResult.success_workflow {
         let client = new System.Net.Sockets.TcpClient()
@@ -80,28 +58,8 @@ module TcpStream =
 
         let cts = new CancellationTokenSource()
 
-        let read_message_seq =
-            let read_message () = 
-                try 
-                    Async.RunSynchronously(read_message_async eom_marker stream, cancellationToken=cts.Token)
-                with
-                | :? OperationCanceledException ->
-                    None
-                | :? ObjectDisposedException -> // means WE closed the connection
-                    None
-
-            let rec loop () = seq {
-                let msg_result = read_message()  
-                match msg_result with
-                | None -> ()
-                | Some msg -> 
-                    yield msg
-                    yield! loop()
-            }
-            loop()
-
         let observable = 
-            read_message_seq 
+            read_message_seq 256 eom_marker stream
             |> Observable.ofSeqOn NewThreadScheduler.Default 
             |> Observable.publish 
         let dispose_observable = Observable.connect observable
@@ -165,7 +123,7 @@ let create_transport (connect_info: ConnectionInfo) =
                 let res = 
                     msg
                     |> getStringF
-                    |>! Result.map (log.Debug "Raw received message: %s")
+                    // |>! Result.map (log.Debug "Raw received message: %s")
                     |> Result.bind <| convertStringF
                     |>! Result.mapFailure (log.Error "%s")
                     |> Result.toOption

@@ -205,7 +205,7 @@ module ``startQueue Tests`` =
 
         let res = 
             start_queue
-            <| create_dummy_logger
+            <| create_dummy_logger()
             <| create_dummy_transport event.Publish 
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
@@ -266,7 +266,7 @@ module ``startQueue Tests`` =
 
         let res = 
             start_queue
-            <| create_dummy_logger
+            <| create_dummy_logger()
             <| create_dummy_transport event.Publish
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get
@@ -329,7 +329,7 @@ module ``startQueue Tests`` =
 
         let res = 
             start_queue
-            <| create_dummy_logger
+            <| create_dummy_logger()
             <| create_dummy_transport event.Publish
             <| (fun agent -> async {
                 let lock = LockData.create "123114141" |> Result.get

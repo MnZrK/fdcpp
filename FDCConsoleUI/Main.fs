@@ -104,6 +104,7 @@ let main argv =
     Result.success_workflow_with_string_failures {
         let! host = HostnameData.create "localhost"
         // let! host = HostnameData.create "p2p.academ.org"
+        // let! host = HostnameData.create "peers.cn.ru"
         let! port = PortData.create 411
 
         let connect_info = {
@@ -115,11 +116,11 @@ let main argv =
             ListenInfo.port = port 
         }
         let! nick = NickData.create "MnZrKk"
-        let pass_maybe = None
+        let pass_maybe = PasswordData.create "dummypass" |> Result.toOption
 
         let res = 
             start_queue
-            <| create_log
+            <| log
             <| create_transport
             <| (fun agent ->  
                 // Thread.Sleep 5000
@@ -136,6 +137,11 @@ let main argv =
                 // Thread.Sleep 55000
 
                 // log.Info "Timedout, disconnecting"
+
+                    // TODO fix it, doesnt look like it is working
+                // Console.CancelKeyPress |> Event.add (fun x -> 
+                //     x.Cancel <- true
+                //     agent.post_and_reply Exit |> ignore)
 
                 let rec loop() = 
                     Thread.Sleep 10000

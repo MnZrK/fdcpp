@@ -54,6 +54,7 @@
     <Content Include="NLog.xsd" />
     <Compile Include="ConsoleLogger.fs" />
     <Compile Include="NLogLogger.fs" />
+    <Compile Include="DummyLogger.fs" />
     <Compile Include="Bootstrap.fs" />
   </ItemGroup>
   <ItemGroup>

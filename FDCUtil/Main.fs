@@ -1,5 +1,43 @@
 module FDCUtil.Main
 
+open System
+
+let read_message_seq buffer_length eom_marker (stream: IO.Stream) =
+    let rec loop_find_eom loop acc msg = seq {
+        let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
+        match i_maybe with
+        | None ->
+            yield! loop (msg::acc)
+        | Some i ->
+            if i < (msg.Length - 1) then
+                yield
+                    msg.[0..i]::acc
+                    |> List.rev
+                    |> Array.concat
+                yield! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+            else
+                yield
+                    msg.[0..i]::acc
+                    |> List.rev
+                    |> Array.concat
+                yield! loop []
+    }
+    let rec loop acc = seq {
+        let buffer = Array.zeroCreate buffer_length
+        
+        let bytes_read = 
+            try
+                stream.Read(buffer, 0, buffer_length)
+            with 
+            | :? IO.IOException
+            | :? ObjectDisposedException ->
+                0
+        if bytes_read <= 0 then () // it means the connection was closed
+        else
+            yield! loop_find_eom loop acc buffer.[0..(bytes_read-1)]
+    }
+    loop [] 
+
 /// Do not use directly
 type MapWithArbKeyType<'key, 'value> when 'key : comparison = MapWithArbKeyType of Map<'key, 'value>
 [<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NameConventions", CheckId = "*")>] 
