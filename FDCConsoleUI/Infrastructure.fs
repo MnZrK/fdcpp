@@ -17,10 +17,6 @@ open FDCUtil.Main.Regex
 open FDCDomain.MessageQueue
 open FDCLogger
 
-// let read_message_async_obs eom_marker  =
-
-
-
 // persistency layer
 // this should have no dependencies on Domain
 // TODO move it somewhere else
@@ -37,6 +33,51 @@ module Network =
             let count = defaultArg count buffer.Length
             let beginSend(b,o,c,cb,s) = socket.BeginSend(b,o,c,SocketFlags.None,cb,s)
             Async.FromBeginEnd(buffer, offset, count, beginSend, socket.EndSend)
+
+    let read_message_async_obs buffer_size eom_marker (socket: Socket) ctoken =
+        let subject = new Subject<byte[]>()
+
+        let rec loop_find_eom loop acc msg = async {
+            let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
+            match i_maybe with
+            | None ->
+                return! loop (msg::acc)
+            | Some i ->
+                if i < (msg.Length - 1) then
+                    let msg' = 
+                        msg.[0..i]::acc
+                        |> List.rev
+                        |> Array.concat
+                    subject.OnNext msg'
+                    return! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+                else
+                    let msg' =
+                        msg.[0..i]::acc
+                        |> List.rev
+                        |> Array.concat
+                    subject.OnNext msg'
+                    return! loop []
+        }
+
+        let rec loop acc = async {
+            let buffer = Array.zeroCreate buffer_size
+            let! bytes_read = 
+                try
+                    socket.AsyncReceive(buffer, 0, buffer_size)
+                with ex ->
+                    subject.OnError(ex)
+                    async { return 0 }
+            if bytes_read <= 0 then
+                // TODO distinguish between correct completion and error
+                // TODO dispose socket ? 
+                // subject.OnCompleted() 
+                ()
+            else 
+                return! loop_find_eom loop acc buffer.[0..bytes_read-1]
+        }
+        Async.Start(loop [], ctoken)
+
+        Observable.asObservable subject
 
     type IRawTransport = 
         inherit IDisposable 
@@ -130,7 +171,7 @@ module Network =
     | Tcp
     | Udp
 
-    let start_server protocol (host: string) (port: int) =
+    let start_server eom_marker protocol (host: string) (port: int) =
         let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
         let endpoint = IPEndPoint(ipaddress, port)
 
@@ -153,8 +194,38 @@ module Network =
             let rec loop() = 
                 printfn "Waiting for request ..."
                 let socket = listener.Accept()
+                printfn "Accepted request"
+                let obs = 
+                    read_message_async_obs 256 eom_marker socket cts.Token
+                    |> Observable.publish
+                let dispose_obs = Observable.connect obs
 
-                // TODO implement
+                let write_agent = MailboxProcessor.Start((fun inbox -> 
+                    let rec loop () = async {
+                        let! msg = inbox.Receive()
+                        // this will throw some exceptions when cancelled and disconnected, 
+                        //  but we don't care because they are silently swallowed
+                        //  and completion of Received observable will trigger anyways
+                        do! socket.AsyncSend(msg, 0, Array.length msg) |> Async.Ignore
+                        return! loop()
+                    } 
+                    loop()
+                ), cts.Token)
+
+                let dispose = 
+                    (fun () ->
+                        socket.Close()
+                        dispose_obs.Dispose()
+                        (write_agent :> IDisposable).Dispose()
+                    )
+                    |> callable_once
+
+                let res = 
+                    { new IRawTransport with
+                        member __.Dispose() = dispose()
+                        member __.Close() = dispose()
+                        member __.Write(x) = write_agent.Post x
+                        member __.Received = obs }
 
                 loop()
             try loop()
