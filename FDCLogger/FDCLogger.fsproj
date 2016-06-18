@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Name>FDCLogger</Name>
@@ -50,8 +50,12 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="NLog.config" />
-    <Content Include="NLog.xsd" />
+    <Content Include="NLog.config">
+      <Paket>True</Paket>
+    </Content>
+    <Content Include="NLog.xsd">
+      <Paket>True</Paket>
+    </Content>
     <Compile Include="ConsoleLogger.fs" />
     <Compile Include="NLogLogger.fs" />
     <Compile Include="DummyLogger.fs" />
@@ -83,24 +87,6 @@
       <ItemGroup>
         <Reference Include="NLog">
           <HintPath>..\packages\NLog\lib\net35\NLog.dll</HintPath>
-          <Private>True</Private>
-          <Paket>True</Paket>
-        </Reference>
-      </ItemGroup>
-    </When>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.0')">
-      <ItemGroup>
-        <Reference Include="NLog">
-          <HintPath>..\packages\NLog\lib\net40\NLog.dll</HintPath>
-          <Private>True</Private>
-          <Paket>True</Paket>
-        </Reference>
-      </ItemGroup>
-    </When>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1' Or $(TargetFrameworkVersion) == 'v4.6.2')">
-      <ItemGroup>
-        <Reference Include="NLog">
-          <HintPath>..\packages\NLog\lib\net45\NLog.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
@@ -146,6 +132,24 @@
       <ItemGroup>
         <Reference Include="NLog">
           <HintPath>..\packages\NLog\lib\Xamarin.iOS10\NLog.dll</HintPath>
+          <Private>True</Private>
+          <Paket>True</Paket>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="($(TargetFrameworkIdentifier) == '.NETStandard' And $(TargetFrameworkVersion) == 'v1.0') Or ($(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.0'))">
+      <ItemGroup>
+        <Reference Include="NLog">
+          <HintPath>..\packages\NLog\lib\net40\NLog.dll</HintPath>
+          <Private>True</Private>
+          <Paket>True</Paket>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="($(TargetFrameworkIdentifier) == '.NETStandard' And ($(TargetFrameworkVersion) == 'v1.1' Or $(TargetFrameworkVersion) == 'v1.2' Or $(TargetFrameworkVersion) == 'v1.3' Or $(TargetFrameworkVersion) == 'v1.4' Or $(TargetFrameworkVersion) == 'v1.5')) Or ($(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1' Or $(TargetFrameworkVersion) == 'v4.6.2'))">
+      <ItemGroup>
+        <Reference Include="NLog">
+          <HintPath>..\packages\NLog\lib\net45\NLog.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
