@@ -115,7 +115,7 @@ module ASCIIString =
             else
                 Failure StringError.NotASCIIString
 
-    let fold f (ASCIIString s) = f s
+    let apply f (ASCIIString s) = f s
     let unwrap (ASCIIString s) = s
 
     let getBytes (ASCIIString s) = getBytes s |> Result.get
@@ -131,7 +131,7 @@ module IpAddress =
         |> Result.map (fun ip ->
             ip.ToString() |> IpAddress
         )
-    let fold f (IpAddress ip) = f ip
+    let apply f (IpAddress ip) = f ip
     let unwrap (IpAddress ip) = ip
 
     let getBytes (IpAddress ip) = getBytes ip |> Result.get
@@ -150,7 +150,7 @@ module PositiveInt =
 
     let fromULong (i: uint64) = PositiveInt i
 
-    let fold f (PositiveInt i) = f i
+    let apply f (PositiveInt i) = f i
     let unwrap (PositiveInt i) = i
 
 // domain primitive types
@@ -159,7 +159,7 @@ module PkData =
 
     let create = mapNullString PkData
 
-    let fold f (PkData s) = f s
+    let apply f (PkData s) = f s
 
 module LockData =
     type T = LockData of ASCIIString.T
@@ -169,14 +169,14 @@ module LockData =
         |> ASCIIString.create
         |> Result.bind <|
         (fun s ->
-            let length = ASCIIString.fold String.length s
+            let length = ASCIIString.apply String.length s
             if length < 2 then
                 StringError.MustNotBeShorterThan 2 |> Failure
             else
                 LockData s |> Success
         )
 
-    let fold f (LockData s) = f s
+    let apply f (LockData s) = f s
 
 module NickData =
     type T = NickData of ASCIIString.T
@@ -195,14 +195,14 @@ module NickData =
             |> ASCIIString.create
             |> Result.map NickData
 
-    let fold f (NickData s) = f s
+    let apply f (NickData s) = f s
     let unwrap (NickData s) = s
 
 module KeyData =
     type T = KeyData of byte[]
 
     let create (lockData: LockData.T) =
-        let lockBytes = LockData.fold ASCIIString.getBytes lockData
+        let lockBytes = LockData.apply ASCIIString.getBytes lockData
         let nibbleSwap b = ((b<<<4) &&& 240uy) ||| ((b>>>4) &&& 15uy)
 
         let lockLen = lockBytes.Length
@@ -215,7 +215,7 @@ module KeyData =
 
         key |> Array.map nibbleSwap |> Array.collect byteToDCN |> KeyData
 
-    let fold f (KeyData b) = f b
+    let apply f (KeyData b) = f b
     let unwrap (KeyData b) = b
 
 module PasswordData =
@@ -235,18 +235,18 @@ module PasswordData =
             |> ASCIIString.create
             |> Result.map PasswordData
 
-    let fold f (PasswordData p) = f p
+    let apply f (PasswordData p) = f p
     let unwrap (PasswordData p) = p
 
     let getBytes (PasswordData pass) =
-        getBytes |> ASCIIString.fold <| pass
+        getBytes |> ASCIIString.apply <| pass
         |> Result.get
 module HostnameData =
     type T = HostnameData of string
 
     let create = mapNullString HostnameData
 
-    let fold f (HostnameData h) = f h
+    let apply f (HostnameData h) = f h
 
 module PortData =
     type T = PortData of int
@@ -261,7 +261,7 @@ module PortData =
         | _ when port >= 65535 -> Error.TooBig |> Failure
         | _ -> PortData port |> Success
 
-    let fold f (PortData p) = f p
+    let apply f (PortData p) = f p
     let unwrap (PortData p) = p
 
 // infrastructure types & interfaces
@@ -462,7 +462,7 @@ let DCNstring_to_DcppMessage input =
                 nicklist_str
                 |> String.split "$$"
                 |> Seq.map NickData.create
-                |> Seq.choose (Result.fold Some (ct None))
+                |> Seq.choose (Result.fork Some (ct None))
                 |> List.ofSeq
 
             return NickList {
@@ -473,7 +473,7 @@ let DCNstring_to_DcppMessage input =
                 nicklist_str
                 |> String.split "$$"
                 |> Seq.map NickData.create
-                |> Seq.choose (Result.fold Some (ct None))
+                |> Seq.choose (Result.fork Some (ct None))
                 |> List.ofSeq
 
             return OpList {
@@ -518,7 +518,7 @@ let DcppMessage_to_bytes dcpp_message =
     | DcppSendMessage.MyPass mp_msg ->
         [
             "$MyPass " |> getBytes |> Result.get;
-            PasswordData.fold ASCIIString.getBytes mp_msg.password;
+            PasswordData.apply ASCIIString.getBytes mp_msg.password;
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
@@ -528,7 +528,7 @@ let DcppMessage_to_bytes dcpp_message =
             "$Key " |> getBytes |> Result.get;
             KeyData.unwrap vn_msg.key;
             "|$ValidateNick " |> getBytes |> Result.get;
-            NickData.fold ASCIIString.getBytes vn_msg.nick;
+            NickData.apply ASCIIString.getBytes vn_msg.nick;
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
@@ -537,7 +537,7 @@ let DcppMessage_to_bytes dcpp_message =
     | DcppSendMessage.MyInfo mi_msg ->
         [
             "$MyINFO $ALL " |> getBytes |> Result.get;
-            NickData.fold ASCIIString.getBytes mi_msg.nick;
+            NickData.apply ASCIIString.getBytes mi_msg.nick;
             " $ $" |> getBytes |> Result.get;
             [|0x35uy; 0x30uy; 0x01uy|];
             "$$0$" |> getBytes |> Result.get;
@@ -730,13 +730,13 @@ let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent
             |> NickData.create
             |>! Result.mapFailure (fun e -> log.Error "Could not create new nick from old nick %A: %A" env.nick e)
             |>! Result.map (fun nick' -> agent.post << Send << RetryNick <| nick')
-            |> Result.fold id (ct env.nick)
+            |> Result.fork id (ct env.nick)
         { env with nick = nick' }
     | Hello msg ->
         log.Info "User %A has enterred" msg.nick
         let res =
             agent.post_and_reply << Helloed <| msg.nick
-            |> (Result.fold
+            |> (Result.fork
                 <| ignore
                 <| (fun e ->
                     // TODO fix this will trigger even for usual Hellos, not for the one which confirms our login

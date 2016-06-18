@@ -30,7 +30,7 @@ let ``Should parse stream`` () =
     let stream = generate_stream_from_string input
     let eom_marker = Convert.ToByte '|'
 
-    let sequence = read_message_seq 256 eom_marker stream
+    let sequence = concat_and_split_stream 256 eom_marker stream
     
     let arr = sequence |> Seq.toArray |> Array.map System.Text.Encoding.ASCII.GetString
     
@@ -46,7 +46,7 @@ let ``Should parse stream from several pieces`` () =
     let stream = generate_stream_from_string input
     let eom_marker = Convert.ToByte '|'
 
-    let sequence = read_message_seq 16 eom_marker stream
+    let sequence = concat_and_split_stream 16 eom_marker stream
     
     let arr = sequence |> Seq.toArray |> Array.map System.Text.Encoding.ASCII.GetString
     

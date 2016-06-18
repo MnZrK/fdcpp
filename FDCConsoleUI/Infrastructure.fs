@@ -1,10 +1,15 @@
 module FDCConsoleUI.Infrastructure
 
 open System
+open System.IO
+open System.Net
+open System.Net.Sockets
 open System.Threading
+open System.Threading.Tasks 
 open System.Reactive.Subjects
 open System.Reactive.Concurrency
 open FSharp.Control.Reactive
+open FSharp.Control.Reactive.Builders
 open FSharp.Configuration
 
 open FDCUtil.Main
@@ -12,13 +17,38 @@ open FDCUtil.Main.Regex
 open FDCDomain.MessageQueue
 open FDCLogger
 
-type IRawTransport = 
-    inherit IDisposable 
-    abstract Received: IConnectableObservable<byte[]>
-    abstract Write: byte[] -> unit
-    abstract Close: unit -> unit
+// let read_message_async_obs eom_marker  =
 
-module TcpStream = 
+
+
+// persistency layer
+// this should have no dependencies on Domain
+// TODO move it somewhere else
+module Network = 
+    type Socket with
+        member socket.AsyncAccept() = Async.FromBeginEnd(socket.BeginAccept, socket.EndAccept)
+        member socket.AsyncReceive(buffer:byte[], ?offset, ?count) =
+            let offset = defaultArg offset 0
+            let count = defaultArg count buffer.Length
+            let beginReceive(b,o,c,cb,s) = socket.BeginReceive(b,o,c,SocketFlags.None,cb,s)
+            Async.FromBeginEnd(buffer, offset, count, beginReceive, socket.EndReceive)
+        member socket.AsyncSend(buffer:byte[], ?offset, ?count) =
+            let offset = defaultArg offset 0
+            let count = defaultArg count buffer.Length
+            let beginSend(b,o,c,cb,s) = socket.BeginSend(b,o,c,SocketFlags.None,cb,s)
+            Async.FromBeginEnd(buffer, offset, count, beginSend, socket.EndSend)
+
+    type IRawTransport = 
+        inherit IDisposable 
+        abstract Received: IConnectableObservable<byte[]>
+        abstract Write: byte[] -> unit
+        abstract Close: unit -> unit
+
+    type IServer = 
+        inherit IDisposable
+        abstract Accepted: IObservable<IRawTransport>
+        abstract Close: unit -> unit
+
     type Error = 
     | CouldntConnect of string
 
@@ -32,14 +62,14 @@ module TcpStream =
             return 
                 CouldntConnect <|
                     match ex.InnerException with
-                    | :? System.Net.Sockets.SocketException as s_ex ->
+                    | :? SocketException as s_ex ->
                         s_ex.Message
                     | _ ->
                         ex.Message
                 |> Failure
     }
 
-    let start_async eom_marker (host: string) (port: int) = AsyncResult.success_workflow {
+    let start_client_async eom_marker (host: string) (port: int) = AsyncResult.success_workflow {
         let client = new System.Net.Sockets.TcpClient()
 
         do! connect_async client host port
@@ -59,8 +89,9 @@ module TcpStream =
 
         let cts = new CancellationTokenSource()
 
+        let buffer_size = 256
         let observable = 
-            read_message_seq 256 eom_marker stream
+            concat_and_split_stream buffer_size eom_marker stream
             |> Observable.ofSeqOn NewThreadScheduler.Default 
             |> Observable.publish 
         let dispose_observable = Observable.connect observable
@@ -94,7 +125,64 @@ module TcpStream =
             member __.Close() = dispose()
             member __.Dispose() = dispose() }         
     }
+
+    type ProtocolType = 
+    | Tcp
+    | Udp
+
+    let start_server protocol (host: string) (port: int) =
+        let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
+        let endpoint = IPEndPoint(ipaddress, port)
+
+        let cts = new CancellationTokenSource()
+
+        let protocol_type = 
+            match protocol with 
+            | Tcp -> System.Net.Sockets.ProtocolType.Tcp
+            | Udp -> System.Net.Sockets.ProtocolType.Udp
+
+        let listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, protocol_type)
         
+        listener.Bind(endpoint)
+        listener.Listen(int SocketOptionName.MaxConnections)
+        
+        printfn "Listening on port %d ..." port
+        let subject = new Subject<IRawTransport>()
+
+        let loop_accept () = 
+            let rec loop() = 
+                printfn "Waiting for request ..."
+                let socket = listener.Accept()
+
+                // TODO implement
+
+                loop()
+            try loop()
+            with ex -> subject.OnError(ex)
+
+        Task.Factory.StartNew(
+            loop_accept, 
+            cts.Token, 
+            TaskCreationOptions.DenyChildAttach+TaskCreationOptions.LongRunning, 
+            TaskScheduler.Default
+        ) |> ignore
+
+        let dispose = 
+            (fun () ->
+                cts.Cancel()
+                (cts :> IDisposable).Dispose()
+                (subject :> IDisposable).Dispose() 
+                listener.Close() // TODO will it dispose all accepted sockets as well ?  
+                (listener :> IDisposable).Dispose()
+            )
+            |> callable_once
+
+        { new IServer with
+            member __.Accepted = Observable.asObservable subject
+            member __.Close() = dispose()
+            member __.Dispose() = dispose() }         
+
+// presentation layer
 let create_log() = (new Logger() :> ILogger)
 
 let create_transport (connect_info: ConnectionInfo) =
@@ -102,14 +190,14 @@ let create_transport (connect_info: ConnectionInfo) =
 
     let eom_marker = Convert.ToByte '|'
     
-    TcpStream.start_async eom_marker 
-    |> HostnameData.fold <| connect_info.host
-    |> PortData.fold <| connect_info.port        
+    Network.start_client_async eom_marker 
+    |> HostnameData.apply <| connect_info.host
+    |> PortData.apply <| connect_info.port        
 
     |> Async.RunSynchronously
     |> Result.mapFailure (
         function
-        | TcpStream.Error.CouldntConnect reason ->
+        | Network.Error.CouldntConnect reason ->
             TransportError.CouldntConnect reason
     )
     |> Result.map (fun client ->
@@ -142,6 +230,7 @@ let create_transport (connect_info: ConnectionInfo) =
         }
     )
 
+// presentation layer
 module Settings = 
     type T = 
         { hub_connection_info: ConnectionInfo

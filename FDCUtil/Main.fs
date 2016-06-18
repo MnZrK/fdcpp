@@ -2,41 +2,49 @@ module FDCUtil.Main
 
 open System
 
-let read_message_seq buffer_length eom_marker (stream: IO.Stream) =
-    let rec loop_find_eom loop acc msg = seq {
-        let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
-        match i_maybe with
-        | None ->
-            yield! loop (msg::acc)
-        | Some i ->
-            if i < (msg.Length - 1) then
-                yield
-                    msg.[0..i]::acc
-                    |> List.rev
-                    |> Array.concat
-                yield! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
-            else
-                yield
-                    msg.[0..i]::acc
-                    |> List.rev
-                    |> Array.concat
-                yield! loop []
-    }
-    let rec loop acc = seq {
-        let buffer = Array.zeroCreate buffer_length
-        
+module Array =
+    let concatSplit eom_marker chunks = 
+        let rec loop_find_eom loop acc msg = seq {
+            let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
+            match i_maybe with
+            | None ->
+                yield! loop (msg::acc)
+            | Some i ->
+                if i < (msg.Length - 1) then
+                    yield
+                        msg.[0..i]::acc
+                        |> List.rev
+                        |> Array.concat
+                    yield! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+                else
+                    yield
+                        msg.[0..i]::acc
+                        |> List.rev
+                        |> Array.concat
+                    yield! loop []
+        }
+        let rec loop acc = seq {
+            for chunk in chunks do yield! loop_find_eom loop acc chunk
+        }
+        loop []
+
+let concat_and_split_stream buffer_size eom_marker (stream: IO.Stream) =
+    let rec read() = seq {
+        let buffer = Array.zeroCreate buffer_size
         let bytes_read = 
             try
-                stream.Read(buffer, 0, buffer_length)
+                stream.Read(buffer, 0, buffer_size)
             with 
             | :? IO.IOException
             | :? ObjectDisposedException ->
                 0
-        if bytes_read <= 0 then () // it means the connection was closed
-        else
-            yield! loop_find_eom loop acc buffer.[0..(bytes_read-1)]
+        if bytes_read <= 0 then 
+            ()
+        else 
+            yield buffer.[0..bytes_read-1]
+            yield! read()
     }
-    loop [] 
+    Array.concatSplit eom_marker (read()) 
 
 /// Do not use directly
 type MapWithArbKeyType<'key, 'value> when 'key : comparison = MapWithArbKeyType of Map<'key, 'value>
@@ -170,7 +178,7 @@ module Result =
         | Success x -> Success x 
         | Failure f -> mapFailure f m
 
-    let fold successF failureF m = 
+    let fork successF failureF m = 
         match m with
         | Success x -> successF x
         | Failure x -> failureF x
