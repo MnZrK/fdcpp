@@ -4,9 +4,12 @@ open System
 
 open Xunit
 open Swensen.Unquote
+open FsCheck
+open FsCheck.Xunit
 
-open FDCUtil.Main
-open FDCUtil.Main.Regex
+open FDCTestHelper
+open FDCUtil
+
 open FDCDomain.MessageQueue
 
 module ``Utilities Tests`` = 
@@ -115,32 +118,6 @@ module ``KeyData Tests`` =
             @>
 
 module ``startQueue Tests`` =
-    // [<Fact>]
-    // let ``Should trigger IObservable from IEvent`` () =
-    //     let event = new Event<int>()
-
-    //     let create_observable ievent: IObservable<int> = ievent
-
-    //     let observable: IObservable<int> = create_observable event.Publish 
-    //     observable |> Observable.add (fun x -> printfn "Got %A" x)
-
-    //     event.Trigger(10)
-
-    //     test <@ true @>
-
-    // [<Fact>]
-    // let ``Should scan IObservable from IEvent`` () =
-    //     let event = new Event<int>()
-
-    //     let create_observable ievent: IObservable<int> = ievent
-
-    //     let observable: IObservable<int> = create_observable event.Publish 
-    //     observable |> Observable.scan (fun state x -> printfn "Got %A" x; state) 10 |> Observable.add ignore
-
-    //     event.Trigger(10)
-
-    //     test <@ false @>
-
     let timeout = 500
 
     let dummy_logger =

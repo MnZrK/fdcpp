@@ -1,4 +1,7 @@
 Xunit
 unquote
 FsCheck.Xunit
+
+FSharp.Control.Reactive
+FSharpx.Async
 Rx-PlatformServices

@@ -1,1 +1,4 @@
 NLog.Config
+
+FSharp.Control.Reactive
+FSharpx.Async

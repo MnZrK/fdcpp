@@ -1,2 +1,5 @@
 unquote
 FsCheck
+
+FSharp.Control.Reactive
+FSharpx.Async

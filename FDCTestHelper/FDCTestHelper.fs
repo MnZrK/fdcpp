@@ -1,5 +1,6 @@
 namespace FDCTestHelper
 
+[<AutoOpen>]
 module UnquoteExtensions =
     open Swensen.Unquote
 
@@ -14,6 +15,7 @@ module UnquoteExtensions =
         | Some ex -> raise ex
         | None -> ()
         
+[<AutoOpen>]
 module FsCheckExtensions = 
     open FsCheck
     open FsCheck.Experimental
@@ -37,3 +39,15 @@ module FsCheckExtensions =
     [<AutoOpen>]
     module Gen =
         let create1 f = Arb.generate<'a> |> Gen.map f
+
+[<AutoOpen>]
+module Main =
+    open System
+
+    let generate_stream_from_string (s: string) = 
+        let stream = new IO.MemoryStream()
+        let writer = new IO.StreamWriter(stream)
+        writer.Write(s)
+        writer.Flush()
+        stream.Position <- 0L
+        stream

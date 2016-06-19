@@ -2,8 +2,7 @@ module FDCDomain.MessageQueue
 
 open System
 
-open FDCUtil.Main
-open FDCUtil.Main.Regex
+open FDCUtil
 
 open FSharp.Control.Reactive
 
@@ -661,7 +660,7 @@ let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_
     | WaitingForPassAuth { connect_info = ci; nick = nick } ->
         let myinfo_msg = DcppSendMessage.MyInfo {nick = nick; share_size = PositiveInt.fromULong 0UL}
         // we are almost logged in, just need to send $Version and $MyINFO
-        let! deps = Result.fromOption deps_maybe DepsAreMissing
+        let! deps = Result.ofOption DepsAreMissing deps_maybe
         deps.transport.Write Version
         deps.transport.Write myinfo_msg
 
@@ -683,7 +682,7 @@ let private dispatch_action (log: ILogger) (create_transport: CreateTransport) a
             return disconnect deps_maybe
 
         | Send send_action, _ ->
-            let! deps = Result.fromOption deps_maybe DepsAreMissing
+            let! deps = Result.ofOption DepsAreMissing deps_maybe
             let! state' = dispatch_send_action send_action (state, deps)
             return state', deps_maybe
 

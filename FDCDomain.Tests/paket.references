@@ -1,2 +1,6 @@
 Xunit
 unquote
+FsCheck.Xunit
+
+FSharp.Control.Reactive
+FSharpx.Async

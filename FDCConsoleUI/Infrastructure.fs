@@ -9,11 +9,10 @@ open System.Threading.Tasks
 open System.Reactive.Subjects
 open System.Reactive.Concurrency
 open FSharp.Control.Reactive
-open FSharp.Control.Reactive.Builders
 open FSharp.Configuration
+open FSharpx
 
-open FDCUtil.Main
-open FDCUtil.Main.Regex
+open FDCUtil
 open FDCDomain.MessageQueue
 open FDCLogger
 
@@ -21,64 +20,6 @@ open FDCLogger
 // this should have no dependencies on Domain
 // TODO move it somewhere else
 module Network = 
-    type Socket with
-        member socket.AsyncAccept() = Async.FromBeginEnd(socket.BeginAccept, socket.EndAccept)
-        member socket.AsyncReceive(buffer:byte[], ?offset, ?count) =
-            let offset = defaultArg offset 0
-            let count = defaultArg count buffer.Length
-            let beginReceive(b,o,c,cb,s) = socket.BeginReceive(b,o,c,SocketFlags.None,cb,s)
-            Async.FromBeginEnd(buffer, offset, count, beginReceive, socket.EndReceive)
-        member socket.AsyncSend(buffer:byte[], ?offset, ?count) =
-            let offset = defaultArg offset 0
-            let count = defaultArg count buffer.Length
-            let beginSend(b,o,c,cb,s) = socket.BeginSend(b,o,c,SocketFlags.None,cb,s)
-            Async.FromBeginEnd(buffer, offset, count, beginSend, socket.EndSend)
-
-    let read_message_async_obs buffer_size eom_marker (socket: Socket) ctoken =
-        let subject = new Subject<byte[]>()
-
-        let rec loop_find_eom loop acc msg = async {
-            let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
-            match i_maybe with
-            | None ->
-                return! loop (msg::acc)
-            | Some i ->
-                if i < (msg.Length - 1) then
-                    let msg' = 
-                        msg.[0..i]::acc
-                        |> List.rev
-                        |> Array.concat
-                    subject.OnNext msg'
-                    return! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
-                else
-                    let msg' =
-                        msg.[0..i]::acc
-                        |> List.rev
-                        |> Array.concat
-                    subject.OnNext msg'
-                    return! loop []
-        }
-
-        let rec loop acc = async {
-            let buffer = Array.zeroCreate buffer_size
-            let! bytes_read = 
-                try
-                    socket.AsyncReceive(buffer, 0, buffer_size)
-                with ex ->
-                    subject.OnError(ex)
-                    async { return 0 }
-            if bytes_read <= 0 then
-                // TODO distinguish between correct completion and error
-                // TODO dispose socket ? 
-                // subject.OnCompleted() 
-                ()
-            else 
-                return! loop_find_eom loop acc buffer.[0..bytes_read-1]
-        }
-        Async.Start(loop [], ctoken)
-
-        Observable.asObservable subject
-
     type IRawTransport = 
         inherit IDisposable 
         abstract Received: IConnectableObservable<byte[]>
@@ -195,8 +136,9 @@ module Network =
                 printfn "Waiting for request ..."
                 let socket = listener.Accept()
                 printfn "Accepted request"
+
                 let obs = 
-                    read_message_async_obs 256 eom_marker socket cts.Token
+                    fetch_concat_split_from_socket 256 eom_marker socket cts.Token
                     |> Observable.publish
                 let dispose_obs = Observable.connect obs
 
