@@ -24,38 +24,53 @@ let main argv =
             start_queue
             <| log
             <| create_transport
-            <| (fun agent ->  
-                // Thread.Sleep 5000
+            <| (fun agent ->
+                let eom_marker = Convert.ToByte '|'
+                let listenip = IpAddress.unwrap settings.listen_info.ip
+                let listenport = PortData.unwrap settings.listen_info.port
+                let udpobs, disposable = Network.start_udpserver eom_marker listenip listenport
 
-                // let search_str = "CopyWizEval.exe"
-
-                // log.Info "Posting search action for: %s" search_str
-                // agent.post << Send <| Search {
-                //     listen_info = listen_info
-                //     search_str = search_str
-                // }
+                try 
+                    udpobs
+                    |> Observable.map getString
+                    |> Observable.asUpdates
+                    |> Observable.add (log.Trace "Got message %A")
 
 
-                // Thread.Sleep 55000
+                    agent.state_changed
+                    |> Observable.filter (fun ((state, _), (state', _)) ->
+                        match state, state' with
+                        | _, LoggedIn env ->
+                            true
+                        | _, _ ->
+                            false
+                    )
+                    |> Observable.first
+                    |> Async.AwaitObservable
+                    |> Async.RunSynchronously
+                    |> ignore
 
-                // log.Info "Timedout, disconnecting"
+                    let search_str = "CopyWizEval.exe"
+                    log.Info "Posting search action for: %s" search_str
+                    agent.post << Send <| Search {
+                        listen_info = settings.listen_info
+                        search_str = search_str
+                    }
 
-                    // TODO fix it, doesnt look like it is working
-                // let obs = Observable.fromEvent Console.CancelKeyPress
-
-                let need_exit = ref false
-
-                Console.CancelKeyPress |> Event.add (fun x ->
-                    log.Info "Got ctrl-c" 
-                    x.Cancel <- true
-                    need_exit := true
-                )
-
-                let rec loop() = 
-                    Thread.Sleep 1000
-                    if !need_exit then ()
-                    else loop()
-                loop()
+                    let need_exit = ref false
+                    Console.CancelKeyPress |> Event.add (fun x ->
+                        log.Info "Got ctrl-c" 
+                        x.Cancel <- true
+                        need_exit := true
+                    )
+                    let rec loop() = 
+                        Thread.Sleep 500
+                        if !need_exit then ()
+                        else loop()
+                    loop()
+                finally
+                    ()
+                    disposable.Dispose()
             )
             <| settings.hub_connection_info
             <| (settings.nick, settings.pass_maybe)

@@ -1,6 +1,7 @@
 module FDCDomain.MessageQueue
 
 open System
+open System.Threading
 
 open FDCUtil
 
@@ -657,6 +658,9 @@ let private dispatch_helloed_message nick' (state, deps_maybe) = Result.success_
         let! deps = Result.ofOption DepsAreMissing deps_maybe
         deps.transport.Write Version
         deps.transport.Write myinfo_msg
+
+        // TODO fix (make us logged in when server responds with HubName or HubTopic or whatever)
+        Thread.Sleep 5000
 
         return LoggedIn { connect_info = ci; nick = nick; users = UserMap.empty }
     | LoggedIn env ->

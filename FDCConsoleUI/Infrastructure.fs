@@ -11,6 +11,7 @@ open System.Threading.Tasks
 // open System.Reactive.Concurrency
 open FSharp.Control.Reactive
 open FSharpx.Control
+open FSharpx.Control.Observable
 
 open FSharp.Configuration
 
@@ -119,28 +120,25 @@ module Network =
             member __.Dispose() = dispose() }         
     }
 
-    type ProtocolType = 
-    | Tcp
-    | Udp
-
-    let start_server eom_marker protocol (host: string) (port: int) =
-        let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
+    let start_tcpserver eom_marker (host: string) (port: int) =
+        printfn "Starting server..."
+        // let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
+        let ipaddress = IPAddress.Loopback // TODO fix
         let endpoint = IPEndPoint(ipaddress, port)
 
         let cts = new CancellationTokenSource()
 
-        let protocol_type = 
-            match protocol with 
-            | Tcp -> System.Net.Sockets.ProtocolType.Tcp
-            | Udp -> System.Net.Sockets.ProtocolType.Udp
 
-        let listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, protocol_type)
+        let listener = new Socket(ipaddress.AddressFamily, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp)
         
+        printfn "Binding to %s:%d..." host port
         listener.Bind(endpoint)
+        printfn "Listening..."
         listener.Listen(int SocketOptionName.MaxConnections)
         
-        printfn "Listening on port %d ..." port
         let subject = new Subject<IRawTransport>()
+
+        let child_subjects = Observable.toList subject
 
         let loop_accept () = 
             let rec loop() = 
@@ -148,8 +146,8 @@ module Network =
                 let socket = listener.Accept()
                 printfn "Accepted request"
 
-                let obs = 
-                    fetch_concat_split_from_socket 256 eom_marker socket cts.Token
+                let buffer_size = 256
+                let obs = fetch_concat_split_from_socket buffer_size eom_marker socket cts.Token
 
                 let write_agent = MailboxProcessor.Start((fun inbox -> 
                     let rec loop () = async {
@@ -162,10 +160,10 @@ module Network =
                     } 
                     loop()
                 ), cts.Token)
-// TODO check all the error handling for sockets and streams and dispose of those
                 let dispose = 
                     (fun () ->
                         socket.Close()
+                        (socket :> IDisposable).Dispose()
                         (write_agent :> IDisposable).Dispose()
                     )
                     |> callable_once
@@ -180,6 +178,7 @@ module Network =
             try loop()
             with ex -> subject.OnError(ex)
 
+        printfn "Starting accept loop..."
         Task.Factory.StartNew(
             loop_accept, 
             cts.Token, 
@@ -189,6 +188,13 @@ module Network =
 
         let dispose = 
             (fun () ->
+                subject.OnCompleted() 
+                // BUG TODO fix memory leak!!! we are collecting ALL ever created sockets
+                let res = 
+                    child_subjects 
+                    |> Async.AwaitObservable 
+                    |> Async.RunSynchronously
+                    |> Seq.map (fun t -> t.Dispose())
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
                 listener.Close() // TODO will it dispose all accepted sockets as well ?  
@@ -199,6 +205,32 @@ module Network =
         { new IServer with
             member __.Accepted = Observable.asObservable subject
             member __.Dispose() = dispose() }
+
+    let start_udpserver eom_marker (host: string) (port: int) =
+        printfn "Starting udp server on %s:%d..." host port
+        // let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
+        let ipaddress = IPAddress.Loopback
+        let endpoint = IPEndPoint(ipaddress, port)
+
+        let cts = new CancellationTokenSource()
+
+        let receiver = new UdpClient(port)
+        
+        printfn "Created udp client %s:%d" host port
+        let buffer_size = 256
+        let obs = fetch_concat_split_from_socket buffer_size eom_marker receiver.Client cts.Token 
+
+        let dispose = 
+            (fun () ->
+                // TODO call obs.OnCompleted ?
+                cts.Cancel()
+                (cts :> IDisposable).Dispose()
+                receiver.Close() // TODO will it dispose all accepted sockets as well ?  
+                (receiver :> IDisposable).Dispose()
+            )
+            |> callable_once
+
+        obs, { new IDisposable with member __.Dispose() = dispose() }
 
 // presentation layer
 let create_log() = (new Logger() :> ILogger)
