@@ -17,6 +17,172 @@ open FDCTestHelper
 open FDCUtil.Main
 open FDCUtil.Reactive
 
+let timeout = 100
+
+[<Fact>]
+let ``Should not be executing onNext after onError`` () =
+    let subject = new Subject<int>()
+
+    let obs = Observable.asObservable subject
+    
+    let got_error = ref false
+    let failed = ref false
+    let oncompleted_called = ref false
+
+    let dispose = 
+        obs 
+        |> Observable.subscribeWithCallbacks
+            (fun x -> if !got_error then failed := true)
+            (fun x -> got_error := true)
+            (fun _ -> oncompleted_called := true)
+    
+    subject.OnNext(1)
+    subject.OnNext(2)
+    subject.OnNext(3)
+    subject.OnNext(4)
+    subject.OnError(exn "got an error")
+    subject.OnNext(5)
+    subject.OnNext(6)
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !failed = false @>
+    test <@ !got_error = true @>
+    test <@ !oncompleted_called = false @>
+
+[<Fact>]
+let ``Should not be executing onNext after onCompleted`` () =
+    let subject = new Subject<int>()
+
+    let obs = Observable.asObservable subject
+    
+    let completed = ref false
+    let failed = ref false
+    let onerror_called = ref false
+
+    let dispose = 
+        obs 
+        |> Observable.subscribeWithCallbacks
+            (fun x -> if !completed then failed := true)
+            (fun _ -> onerror_called := true)
+            (fun x -> completed := true)
+    
+    subject.OnNext(1)
+    subject.OnNext(2)
+    subject.OnNext(3)
+    subject.OnNext(4)
+    subject.OnCompleted()
+    subject.OnNext(5)
+    subject.OnNext(6)
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !failed = false @>
+    test <@ !completed = true @>
+    test <@ !onerror_called = false @>
+
+[<Fact>]
+let ``Should not be executing onNext after dispose`` () =
+    let subject = new Subject<int>()
+
+    let obs = Observable.asObservable subject
+    
+    let disposed = ref false
+    let failed = ref false
+    let onerror_called = ref false
+    let oncompleted_called = ref false
+
+    let dispose = 
+        obs 
+        |> Observable.subscribeWithCallbacks
+            (fun x -> if !disposed then failed := true)
+            (fun _ -> onerror_called := true)
+            (fun _ -> oncompleted_called := true)
+    
+    subject.OnNext(1)
+    subject.OnNext(2)
+    subject.OnNext(3)
+    subject.OnNext(4)
+    dispose.Dispose()
+    disposed := true
+    subject.OnNext(5)
+    subject.OnNext(6)
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !failed = false @>
+    test <@ !onerror_called = false @>
+    test <@ !oncompleted_called = false @>
+
+
+[<Fact>]
+let ``Should not be executing onNext after onError with add`` () =
+    let subject = new Subject<int>()
+
+    let obs = Observable.asObservable subject
+    
+    let got_error = ref false
+    let failed = ref false
+    let oncompleted_called = ref false
+
+    let dispose = 
+        obs 
+        |> Observable.asUpdates
+        |> Observable.add (
+            function
+            | Next _ -> if !got_error then failed := true
+            | Error _ -> got_error := true
+            | Completed -> oncompleted_called := true
+        )
+    
+    subject.OnNext(1)
+    subject.OnNext(2)
+    subject.OnNext(3)
+    subject.OnNext(4)
+    subject.OnError(exn "got an error")
+    subject.OnNext(5)
+    subject.OnNext(6)
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !failed = false @>
+    test <@ !got_error = true @>
+    test <@ !oncompleted_called = false @>
+
+[<Fact>]
+let ``Should not be executing onNext after onCompleted with add`` () =
+    let subject = new Subject<int>()
+
+    let obs = Observable.asObservable subject
+    
+    let completed = ref false
+    let failed = ref false
+    let onerror_called = ref false
+
+    let dispose = 
+        obs 
+        |> Observable.asUpdates
+        |> Observable.add (
+            function
+            | Next _ -> if !completed then failed := true
+            | Error _ -> onerror_called := true
+            | Completed -> completed := true
+        )
+        
+    subject.OnNext(1)
+    subject.OnNext(2)
+    subject.OnNext(3)
+    subject.OnNext(4)
+    subject.OnCompleted()
+    subject.OnNext(5)
+    subject.OnNext(6)
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !failed = false @>
+    test <@ !completed = true @>
+    test <@ !onerror_called = false @>
+
 [<Fact>]
 let ``Should not throw (but should fail) when reading more then content`` () =
     let input = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|<Bender-Nsk-2> ????? ??????: 45 ???? 10 ????? 48 ????? 18 ??????. ????????????? ??????: 27159|$HubName CN.Peers|$Hello MnZrKk|"
