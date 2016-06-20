@@ -20,6 +20,37 @@ open FDCUtil.Reactive
 let timeout = 100
 
 [<Fact>]
+let ``Should be executing both subscriptions`` () =
+    let subject = new Subject<int>()
+    let obs = Observable.asObservable subject
+
+    let first_called = ref 0
+    let second_called = ref 0
+    let main_thread_id = Thread.CurrentThread.ManagedThreadId
+    let first_thread_id = ref -1
+    let second_thread_id = ref -1
+
+    obs |> Observable.add (fun _ -> 
+        first_thread_id := Thread.CurrentThread.ManagedThreadId
+        first_called := !first_called + 1)
+    obs |> Observable.add (fun _ -> 
+        second_thread_id := Thread.CurrentThread.ManagedThreadId
+        second_called := !second_called + 1)
+
+    test <@ main_thread_id = Thread.CurrentThread.ManagedThreadId @> 
+    
+    subject.OnNext(10)
+    test <@ main_thread_id = Thread.CurrentThread.ManagedThreadId @>
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ main_thread_id = Thread.CurrentThread.ManagedThreadId @>
+
+    test <@ !first_called = 1 @>
+    test <@ !second_called = 1 @>
+    test <@ !first_thread_id = !second_thread_id @>
+
+[<Fact>]
 let ``Should not be executing onNext after onError`` () =
     let subject = new Subject<int>()
 

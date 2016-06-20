@@ -15,7 +15,7 @@ type internal Message<'action, 'state, 'e> =
 | Post of 'action
 | PostAndReply of 'action * AsyncReplyChannel<Result<'state, ReplyError<'e>>>
 | Fetch of AsyncReplyChannel<'state>
-| Die
+| Die of AsyncReplyChannel<unit>
 
 type T<'action, 'state, 'e> = {
     post: 'action -> unit
@@ -88,8 +88,9 @@ let internal _create (state, deps) f =
             | Fetch replychannel ->
                 replychannel.Reply((acc_state, acc_deps))
                 return! loop (acc_state, acc_deps)
-            | Die ->
+            | Die replychannel ->
                 stopped.Cancel()
+                replychannel.Reply(())
                 return ()
         }
         loop (state, deps)
@@ -120,7 +121,7 @@ let internal _create (state, deps) f =
                 FetchError.IsStopped |> Failure
         res
 
-    let stop () = agent.Post Die
+    let stop () = agent.PostAndReply Die
 
     agent,
     stop,
