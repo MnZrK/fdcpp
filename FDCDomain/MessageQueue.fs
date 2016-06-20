@@ -5,6 +5,7 @@ open System
 open FDCUtil
 
 open FSharp.Control.Reactive
+open FSharpx.Control
 
 // errors
 type StringError =
@@ -585,13 +586,6 @@ let private validate_state (state, deps) =
     | _ ->
         Success ()
 
-let private disconnect deps_maybe =
-    deps_maybe
-    |> Option.map (fun deps -> deps.transport.Dispose())
-    |> ignore
-
-    (NotConnected, None)
-
 let private dispatch_send_action action (state, deps) =
     match action, state with
     | Search action, LoggedIn env ->
@@ -677,9 +671,28 @@ let private dispatch_action (log: ILogger) (create_transport: CreateTransport) a
     Result.success_workflow {
         do! validate_state (state, deps_maybe)
         match action, state with
-        | Disconnect, _
         | Disconnected, _ ->
-            return disconnect deps_maybe
+            // WILL what if somebody posts Disconnected event instead of Disconnect? then we might get into infinite loop 
+            //  of constant connecting-disconnecting
+            deps_maybe
+            |> Option.map (fun deps -> deps.transport.Dispose())
+            |> ignore
+
+            return (NotConnected, None)
+        | Disconnect, _ ->
+            match deps_maybe with
+            | None -> 
+                return (NotConnected, None)
+            | Some deps ->
+                log.Info "Disconnecting..."
+                // WILL we rely on the fact that disposing transport will call onCompletion handler
+                //  where we send Disconnected event and that in turn changes state. But all of it 
+                //  enforces strong coupling between dispatch_action and start_queue which is kinda bad.
+                deps.transport.Dispose()
+                // i dont like that state here is not changing, but 
+                //  introducing Disconnecting state just for this 
+                //  seems like overkill.
+                return (state, deps_maybe)  
 
         | Send send_action, _ ->
             let! deps = Result.ofOption DepsAreMissing deps_maybe
@@ -760,7 +773,7 @@ let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent
         env
     | BadPass ->
         log.Error "BadPass for nick %A" env.nick
-        agent.post AgentAction.Disconnected
+        agent.post AgentAction.Disconnect
         env
     | DcppReceiveMessage.LoggedIn ->
         // WILL it is related to Op users, we dont care about them for a moment
@@ -807,7 +820,7 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
                 log.Warn "Disconnected from %A" ci
                 agent.post Disconnected
             )
-            |> ignore // it is ok not to dispose the subscription here - the IObservable will be disposed instead
+            |> ignore
         | _ -> ()
     )
 
@@ -817,14 +830,20 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
             log.Info "Successfully logged in as %A" env'.nick
         | _, NotConnected ->
             log.Info "Disconnected"
-
-            log.Info "Connecting to %A..." connect_info
-            agent.post_and_reply <| Connect connect_info
-            |> Result.mapFailure (log.Error "Couldnt connect %A")
-            |> Result.map (log.Info "Reconnected %A")
-            |> ignore
         | _ -> ()
     )
+
+    use stop_reconnecting = 
+        state_events |> Observable.subscribe (
+            function
+            | _, NotConnected ->
+                log.Info "Connecting to %A..." connect_info
+                agent.post_and_reply <| Connect connect_info
+                |> Result.mapFailure (log.Error "Couldnt connect %A")
+                |> Result.map (log.Info "Reconnected %A")
+                |> ignore
+            | _ -> ()
+        )
 
     agent.errored |> Observable.add (log.Error "Action error: %A")
 
@@ -835,7 +854,8 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
         try
             callback(agent)
         finally
-            agent.post <| Disconnect
+            stop_reconnecting.Dispose()
+            agent.post_and_reply <| Disconnect |> ignore
     )
 
 let start_queue (log: ILogger) (create_transport: CreateTransport) await_terminator connect_info (nick_data, pass_data_maybe) =

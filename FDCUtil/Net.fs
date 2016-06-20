@@ -37,13 +37,7 @@ let fetch_concat_split_from_socket buffer_size eom_marker (socket: System.Net.So
 let concat_and_split_stream buffer_size eom_marker (stream: IO.Stream) =
     let rec read() = seq {
         let buffer = Array.zeroCreate buffer_size
-        let bytes_read = 
-            try
-                stream.Read(buffer, 0, buffer_size)
-            with 
-            | :? IO.IOException
-            | :? ObjectDisposedException ->
-                0
+        let bytes_read = stream.Read(buffer, 0, buffer_size)
         if bytes_read <= 0 then 
             ()
         else 

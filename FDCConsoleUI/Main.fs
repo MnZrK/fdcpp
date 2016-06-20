@@ -5,6 +5,8 @@ open System.Threading
 
 open FSharp.Configuration
 open FSharp.Control.Reactive
+open FSharpx.Control
+open FSharpx.Control.Observable
 
 open FDCDomain.MessageQueue
 open FDCConsoleUI.Infrastructure
@@ -39,13 +41,20 @@ let main argv =
                 // log.Info "Timedout, disconnecting"
 
                     // TODO fix it, doesnt look like it is working
-                // Console.CancelKeyPress |> Event.add (fun x -> 
-                //     x.Cancel <- true
-                //     agent.post_and_reply Exit |> ignore)
+                // let obs = Observable.fromEvent Console.CancelKeyPress
+
+                let need_exit = ref false
+
+                Console.CancelKeyPress |> Event.add (fun x ->
+                    log.Info "Got ctrl-c" 
+                    x.Cancel <- true
+                    need_exit := true
+                )
 
                 let rec loop() = 
-                    Thread.Sleep 10000
-                    loop()
+                    Thread.Sleep 1000
+                    if !need_exit then ()
+                    else loop()
                 loop()
             )
             <| settings.hub_connection_info
