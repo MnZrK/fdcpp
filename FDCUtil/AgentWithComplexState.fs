@@ -137,8 +137,8 @@ let internal _create (state, deps) f =
                 FetchError.IsStopped |> Failure
         res
 
-    let stop () = 
-        fun () -> agent.PostAndReply Die
+    let stop = 
+        (fun () -> agent.PostAndReply Die)
         |> callable_once
 
     agent,

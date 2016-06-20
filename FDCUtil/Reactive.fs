@@ -9,6 +9,7 @@ type ('a, 'b) asyncresult = Async<result<'a,'b>>
 type AsyncResult<'a, 'b> = asyncresult<'a, 'b>
 module AsyncResult = 
     let ofAsyncChoice2 c = Async.map Result.ofChoice2 c
+    let ofResult r = async { return r }
 
     let map f m = async {
         let! res = m

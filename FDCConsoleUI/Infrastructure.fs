@@ -4,13 +4,15 @@ open System
 open System.IO
 open System.Net
 open System.Net.Sockets
+
 open System.Threading
 open System.Threading.Tasks 
-open System.Reactive.Subjects
-open System.Reactive.Concurrency
+// open System.Reactive.Subjects
+// open System.Reactive.Concurrency
 open FSharp.Control.Reactive
+open FSharpx.Control
+
 open FSharp.Configuration
-open FSharpx
 
 open FDCUtil
 open FDCDomain.MessageQueue
@@ -22,14 +24,12 @@ open FDCLogger
 module Network = 
     type IRawTransport = 
         inherit IDisposable 
-        abstract Received: IConnectableObservable<byte[]>
+        abstract Received: IObservable<byte[]>
         abstract Write: byte[] -> unit
-        abstract Close: unit -> unit
 
     type IServer = 
         inherit IDisposable
         abstract Accepted: IObservable<IRawTransport>
-        abstract Close: unit -> unit
 
     type Error = 
     | CouldntConnect of string
@@ -72,11 +72,23 @@ module Network =
         let cts = new CancellationTokenSource()
 
         let buffer_size = 256
-        let observable = 
-            concat_and_split_stream buffer_size eom_marker stream
-            |> Observable.ofSeqOn NewThreadScheduler.Default 
-            |> Observable.publish 
-        let dispose_observable = Observable.connect observable
+        let subject = new Subject<_>()
+        let start_reading () =
+            try  
+                for msg in concat_and_split_stream buffer_size eom_marker stream do
+                    subject.OnNext(msg) 
+            with
+            | :? ObjectDisposedException
+            | :? IOException ->
+                subject.OnCompleted()
+            | ex -> 
+                subject.OnError(ex)
+        Task.Factory.StartNew(
+            start_reading, 
+            cts.Token, 
+            TaskCreationOptions.DenyChildAttach+TaskCreationOptions.LongRunning, 
+            TaskScheduler.Default
+        ) |> ignore
 
         let write_agent = MailboxProcessor.Start((fun inbox -> 
             let rec loop () = async {
@@ -91,20 +103,19 @@ module Network =
         ), cts.Token)
 
         let dispose = 
-            (fun () ->
+            fun () ->
+                subject.OnCompleted() // it is safe to call onCompleted several times, the handler will be invoked only once
                 cts.Cancel()
                 (cts :> IDisposable).Dispose() 
+                (stream :> IDisposable).Dispose()
                 client.Close() 
                 (client :> IDisposable).Dispose()
                 (write_agent :> IDisposable).Dispose()
-                dispose_observable.Dispose()
-            )
             |> callable_once
 
         return { new IRawTransport with
-            member __.Received = observable
+            member __.Received = Observable.asObservable subject
             member __.Write(x) = write_agent.Post x // it is safe to call Post on disposed MailboxProcessor
-            member __.Close() = dispose()
             member __.Dispose() = dispose() }         
     }
 
@@ -139,8 +150,6 @@ module Network =
 
                 let obs = 
                     fetch_concat_split_from_socket 256 eom_marker socket cts.Token
-                    |> Observable.publish
-                let dispose_obs = Observable.connect obs
 
                 let write_agent = MailboxProcessor.Start((fun inbox -> 
                     let rec loop () = async {
@@ -157,7 +166,6 @@ module Network =
                 let dispose = 
                     (fun () ->
                         socket.Close()
-                        dispose_obs.Dispose()
                         (write_agent :> IDisposable).Dispose()
                     )
                     |> callable_once
@@ -165,7 +173,6 @@ module Network =
                 let res = 
                     { new IRawTransport with
                         member __.Dispose() = dispose()
-                        member __.Close() = dispose()
                         member __.Write(x) = write_agent.Post x
                         member __.Received = obs }
 
@@ -184,7 +191,6 @@ module Network =
             (fun () ->
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
-                (subject :> IDisposable).Dispose() 
                 listener.Close() // TODO will it dispose all accepted sockets as well ?  
                 (listener :> IDisposable).Dispose()
             )
@@ -192,8 +198,7 @@ module Network =
 
         { new IServer with
             member __.Accepted = Observable.asObservable subject
-            member __.Close() = dispose()
-            member __.Dispose() = dispose() }         
+            member __.Dispose() = dispose() }
 
 // presentation layer
 let create_log() = (new Logger() :> ILogger)

@@ -51,6 +51,29 @@ let ``Should be executing both subscriptions`` () =
     test <@ !first_thread_id = !second_thread_id @>
 
 [<Fact>]
+let ``Should be calling onCompleted or onError only once`` () =
+    let subject = new Subject<int>()
+    let obs = Observable.asObservable subject
+
+    let completed_called = ref 0
+    let error_called = ref 0
+
+    obs 
+    |> Observable.subscribeWithCallbacks 
+        ignore
+        (fun _ -> error_called := !error_called + 1) 
+        (fun _ -> completed_called := !completed_called + 1) 
+    |> ignore
+
+    subject.OnCompleted()
+    subject.OnError(exn "failed")
+    subject.OnCompleted()
+
+    Async.Sleep(timeout) |> Async.RunSynchronously
+
+    test <@ !completed_called + !error_called = 1 @>
+
+[<Fact>]
 let ``Should not be executing onNext after onError`` () =
     let subject = new Subject<int>()
 
