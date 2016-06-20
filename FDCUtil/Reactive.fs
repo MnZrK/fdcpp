@@ -66,12 +66,14 @@ module Array =
             | Failure ex ->
                 subject.OnError(ex)
             | Success [||] ->
-                subject.OnCompleted()
+                subject.OnCompleted() // TODO check again all the error handling and disposing! of subjects and whatnot. remember that there are two different subjects with the same name, and one of them is disposable and another is not
             | Success msg ->
                 return! loop_find_eom loop acc msg
-                // TODO send onCompleted when cancelled ?
         }
         let lazystart = lazy (Async.Start(loop [], ctoken))
 
         let obs = Observable.asObservable subject
-        Observable.defer (fun () -> lazystart.Force(); obs)
+        Observable.defer (fun () ->
+            lazystart.Force()
+            obs
+        )

@@ -153,7 +153,7 @@ module Network =
                     } 
                     loop()
                 ), cts.Token)
-
+// TODO check all the error handling for sockets and streams and dispose of those
                 let dispose = 
                     (fun () ->
                         socket.Close()
