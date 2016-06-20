@@ -54,7 +54,7 @@ let ``Should trigger event only when state changes`` x x' =
         loop (x, []) testF 
         <| (fun agent ->
             agent.state_changed 
-            |> Event.add (fun ((state, deps), (state', deps')) ->
+            |> Observable.add (fun ((state, deps), (state', deps')) ->
                 res := testO <@ state <> state' @>
             )
                 
@@ -74,7 +74,7 @@ let ``Should not trigger events for failure`` () =
         loop (0, []) 
         <| (fun _ _ -> Failure "test") 
         <| (fun agent -> 
-                agent.state_changed |> Event.add (fun _ -> triggered := true)
+                agent.state_changed |> Observable.add (fun _ -> triggered := true)
                 agent.post 10
             )
 
@@ -88,7 +88,7 @@ let ``Should not trigger events for inner exception`` () =
         loop (0, []) 
         <| (fun _ _ -> failwith "hello")
         <| (fun agent -> 
-                agent.state_changed |> Event.add (fun _ -> triggered := true)
+                agent.state_changed |> Observable.add (fun _ -> triggered := true)
                 agent.post 10
             ) 
 
@@ -103,7 +103,7 @@ let ``Should get proper error when inner exception`` () =
 
     test <@ 
             match res with
-            | Failure (ActionException ex) ->
+            | Failure (ActionError (ActionException ex)) ->
                 match ex.Message with 
                 | "I failed" -> true
                 | _ -> false

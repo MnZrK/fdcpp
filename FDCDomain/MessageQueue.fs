@@ -792,10 +792,10 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
     let full_state_events = agent.state_changed
     let state_events =
         agent.state_changed
-        |> Event.map (fun ((state, _), (state', _)) -> (state, state'))
+        |> Observable.map (fun ((state, _), (state', _)) -> (state, state'))
         // |>! Event.add (fun (state, state') -> log.Trace "State changed from %A to %A" state state')
 
-    full_state_events |> Event.add (
+    full_state_events |> Observable.add (
         function
         | (NotConnected, _), (Connected ci, Some deps) ->
             log.Info "Connected to %A" ci
@@ -811,7 +811,7 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
         | _ -> ()
     )
 
-    state_events |> Event.add (
+    state_events |> Observable.add (
         function
         | (WaitingForAuth _ | WaitingForPassAuth _), LoggedIn env' ->
             log.Info "Successfully logged in as %A" env'.nick
@@ -825,6 +825,8 @@ let private handle_agent (log: ILogger) callback connect_info (nick_data, pass_d
             |> ignore
         | _ -> ()
     )
+
+    agent.errored |> Observable.add (log.Error "Action error: %A")
 
     log.Info "Connecting to %A..." connect_info
     agent.post_and_reply <| Connect connect_info
