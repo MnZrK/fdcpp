@@ -403,6 +403,10 @@ type SearchAction =
     { listen_info: ListenInfo
     ; search_str: string }
 
+type ConnectToMeAction =
+    { listen_info: ListenInfo
+    ; remote_nick: NickData.T }
+
 // higher-order domain models
 type DcppReceiveMessage =
 | Lock of LockMessage
@@ -443,6 +447,7 @@ type SendAction =
 | SendPass of PasswordData.T
 | RetryNick of NickData.T
 | Search of SearchAction
+| ConnectToMe of ConnectToMeAction
 
 /// Actions which are available only for LoggedIn state
 type MainAction = 
@@ -734,6 +739,12 @@ let private dispatch_send_action action (state, deps) =
     match action, state with
     | Search action, LoggedIn env ->
         let msg = DcppSendMessage.Search { listen_info = action.listen_info; search_str = action.search_str }
+
+        deps.transport.Write msg
+
+        state |> Success
+    | ConnectToMe action, LoggedIn env ->
+        let msg = DcppSendMessage.ConnectToMe { listen_info = action.listen_info; remove_nick = action.remote_nick }
 
         deps.transport.Write msg
 

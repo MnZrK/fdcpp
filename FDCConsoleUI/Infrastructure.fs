@@ -120,14 +120,13 @@ module Network =
             member __.Dispose() = dispose() }         
     }
 
-    let start_tcpserver eom_marker (host: string) (port: int) =
+    let start_tcpserver eom_marker (port: int) =
         printfn "Starting server..."
-        // let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
-        let ipaddress = IPAddress.Loopback // TODO fix
+        let host = "0.0.0.0"
+        let ipaddress = IPAddress.Parse host
         let endpoint = IPEndPoint(ipaddress, port)
 
         let cts = new CancellationTokenSource()
-
 
         let listener = new Socket(ipaddress.AddressFamily, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp)
         
@@ -138,7 +137,7 @@ module Network =
         
         let subject = new Subject<IRawTransport>()
 
-        let child_transports = Observable.toList subject
+        let child_transports = Observable.toList subject |> Async.AwaitObservable 
 
         let loop_accept () = 
             let rec loop() = 
@@ -177,6 +176,7 @@ module Network =
                         member __.Dispose() = dispose()
                         member __.Write(x) = write_agent.Post x
                         member __.Received = obs }
+                subject.OnNext(res)
 
                 loop()
             try loop()
@@ -194,11 +194,9 @@ module Network =
             (fun () ->
                 subject.OnCompleted() 
                 // BUG TODO fix memory leak!!! we are collecting ALL ever created sockets
-                let res = 
-                    child_transports 
-                    |> Async.AwaitObservable 
-                    |> Async.RunSynchronously
-                    |> Seq.map (fun t -> t.Dispose())
+                child_transports 
+                |> Async.RunSynchronously
+                |> Seq.iter (fun t -> t.Dispose())
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
                 listener.Close() 
