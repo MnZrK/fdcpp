@@ -25,18 +25,7 @@ let main argv =
             <| log
             <| create_transport
             <| (fun agent ->
-                let eom_marker = Convert.ToByte '|'
-                let listenip = IpAddress.unwrap settings.listen_info.ip
-                let listenport = PortData.unwrap settings.listen_info.port
-                let udpobs, disposable = Network.start_udpserver eom_marker listenip listenport
-
-                try 
-                    udpobs
-                    |> Observable.map getString
-                    |> Observable.asUpdates
-                    |> Observable.add (log.Trace "Got message %A")
-
-
+                let wait_for_login = 
                     agent.state_changed
                     |> Observable.filter (fun ((state, _), (state', _)) ->
                         match state, state' with
@@ -47,8 +36,20 @@ let main argv =
                     )
                     |> Observable.first
                     |> Async.AwaitObservable
-                    |> Async.RunSynchronously
-                    |> ignore
+                    |> Async.Ignore
+
+                let eom_marker = Convert.ToByte '|'
+                let listenip = IpAddress.unwrap settings.listen_info.ip
+                let listenport = PortData.unwrap settings.listen_info.port
+                let udpobs, disposable = Network.start_udpserver eom_marker listenport
+
+                try 
+                    udpobs
+                    |> Observable.map getString
+                    |> Observable.asUpdates
+                    |> Observable.add (log.Trace "Got message %A")
+
+                    Async.RunSynchronously wait_for_login
 
                     let search_str = "CopyWizEval.exe"
                     log.Info "Posting search action for: %s" search_str

@@ -333,7 +333,7 @@ let ``Should parse stream using async wrapper around sync read`` buffer_size =
             )
     }
     
-    let obs = Array.fetchConcatSplit eom_marker read_async ((new CancellationTokenSource()).Token)
+    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
@@ -366,7 +366,7 @@ let ``Should parse stream using ReadAsync`` buffer_size =
         return res
     }
     
-    let obs = Array.fetchConcatSplit eom_marker read_async ((new CancellationTokenSource()).Token)
+    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
@@ -399,7 +399,7 @@ let ``Should parse stream using AsyncRead`` buffer_size =
         return res
     }
     
-    let obs = Array.fetchConcatSplit eom_marker read_async ((new CancellationTokenSource()).Token)
+    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>

@@ -138,7 +138,7 @@ module Network =
         
         let subject = new Subject<IRawTransport>()
 
-        let child_subjects = Observable.toList subject
+        let child_transports = Observable.toList subject
 
         let loop_accept () = 
             let rec loop() = 
@@ -147,8 +147,9 @@ module Network =
                 printfn "Accepted request"
 
                 let buffer_size = 256
-                let obs = fetch_concat_split_from_socket buffer_size eom_marker socket cts.Token
+                let obs, dispose_obs = fetch_concat_split_from_socket buffer_size eom_marker socket
 
+                let inner_cts = new CancellationTokenSource()
                 let write_agent = MailboxProcessor.Start((fun inbox -> 
                     let rec loop () = async {
                         let! msg = inbox.Receive()
@@ -159,9 +160,12 @@ module Network =
                         return! loop()
                     } 
                     loop()
-                ), cts.Token)
+                ), inner_cts.Token)
                 let dispose = 
                     (fun () ->
+                        dispose_obs()
+                        inner_cts.Cancel()
+                        (inner_cts :> IDisposable).Dispose()
                         socket.Close()
                         (socket :> IDisposable).Dispose()
                         (write_agent :> IDisposable).Dispose()
@@ -191,13 +195,13 @@ module Network =
                 subject.OnCompleted() 
                 // BUG TODO fix memory leak!!! we are collecting ALL ever created sockets
                 let res = 
-                    child_subjects 
+                    child_transports 
                     |> Async.AwaitObservable 
                     |> Async.RunSynchronously
                     |> Seq.map (fun t -> t.Dispose())
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
-                listener.Close() // TODO will it dispose all accepted sockets as well ?  
+                listener.Close() 
                 (listener :> IDisposable).Dispose()
             )
             |> callable_once
@@ -206,9 +210,7 @@ module Network =
             member __.Accepted = Observable.asObservable subject
             member __.Dispose() = dispose() }
 
-    let start_udpserver eom_marker (host: string) (port: int) =
-        printfn "Starting udp server on %s:%d..." host port
-        // let ipaddress = Dns.GetHostEntry(host).AddressList.[0]
+    let start_udpserver eom_marker (port: int) =
         let ipaddress = IPAddress.Loopback
         let endpoint = IPEndPoint(ipaddress, port)
 
@@ -216,16 +218,15 @@ module Network =
 
         let receiver = new UdpClient(port)
         
-        printfn "Created udp client %s:%d" host port
         let buffer_size = 256
-        let obs = fetch_concat_split_from_socket buffer_size eom_marker receiver.Client cts.Token 
+        let obs, dispose_obs = fetch_concat_split_from_socket buffer_size eom_marker receiver.Client 
 
         let dispose = 
             (fun () ->
-                // TODO call obs.OnCompleted ?
+                dispose_obs()
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
-                receiver.Close() // TODO will it dispose all accepted sockets as well ?  
+                receiver.Close()  
                 (receiver :> IDisposable).Dispose()
             )
             |> callable_once

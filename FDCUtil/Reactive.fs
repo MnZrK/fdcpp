@@ -1,6 +1,9 @@
 [<AutoOpen>]
 module FDCUtil.Reactive
 
+open System
+open System.Threading
+
 open FSharp.Control.Reactive
 open FSharpx.Control
 
@@ -36,7 +39,7 @@ module AsyncResult =
 module Array =
     /// Fetch the data using `readf_async`, "concatenate" all the data in a single stream
     /// and then split it into messages where end of each message is indicated by `eom_marker`
-    let fetchConcatSplit eom_marker readf_async ctoken =
+    let fetchConcatSplit eom_marker readf_async =
         let subject = new Subject<'a[]>()
 
         let rec loop_find_eom loop acc msg = async {
@@ -71,10 +74,21 @@ module Array =
             | Success msg ->
                 return! loop_find_eom loop acc msg
         }
-        let lazystart = lazy (Async.Start(loop [], ctoken))
+        let cts = new CancellationTokenSource()
+        let lazystart = lazy (Async.Start(loop [], cts.Token))
 
         let obs = Observable.asObservable subject
-        Observable.defer (fun () ->
-            lazystart.Force()
-            obs
-        )
+        let deferred = 
+            Observable.defer (fun () ->
+                lazystart.Force()
+                obs
+            )
+        let dispose =
+            (fun () -> 
+                cts.Cancel()
+                (cts :> IDisposable).Dispose()
+                subject.OnCompleted()
+            )
+            |> callable_once
+
+        deferred, dispose
