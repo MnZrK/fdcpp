@@ -56,6 +56,8 @@ let byteToDCN b =
     | Success bytes -> bytes
     | _ -> failwith "It is impossible to get here, function always succeeds"
 
+let bytesToDCN = Array.collect byteToDCN
+
 let stringToDCN (s: string) =
     let getBytesL = getBytes >> Result.map List.ofArray
     let byteToDCNL = byteToDCN >> List.ofArray |> List.collect
@@ -116,6 +118,15 @@ module ASCIIString =
             else
                 Failure StringError.NotASCIIString
 
+    let generate len =
+        let rnd = System.Random()
+        let res = 
+            Array.init len (fun _ -> byte (rnd.Next(32, 127)))
+            |> getString 
+            |> Result.get
+            |> ASCIIString
+        res
+
     let apply f (ASCIIString s) = f s
     let unwrap (ASCIIString s) = s
 
@@ -138,6 +149,7 @@ module IpAddress =
     let getBytes (IpAddress ip) = getBytes ip |> Result.get
 
 module PositiveInt =
+    /// 0 is inclusive
     type T = PositiveInt of uint64
 
     type Error =
@@ -176,8 +188,13 @@ module LockData =
             else
                 LockData s |> Success
         )
+    let generate () =
+        let rnd = System.Random()
+        let len = rnd.Next(81, 134)
+        ASCIIString.generate len |> LockData
 
     let apply f (LockData s) = f s
+    let unwrap (LockData s) = s
 
 module NickData =
     type T = NickData of ASCIIString.T
@@ -265,6 +282,17 @@ module PortData =
     let apply f (PortData p) = f p
     let unwrap (PortData p) = p
 
+module Direction = 
+    type T =
+    | Upload
+    | Download
+
+    let create str = 
+        match str with
+        | "Upload" -> Success Upload
+        | "Download" -> Success Download
+        | _ -> StringError.CouldntConvert (exn "doesn't match") |> Failure
+
 // infrastructure types & interfaces
 type ConnectionInfo =
     { host: HostnameData.T
@@ -333,6 +361,25 @@ type SearchMessage =
     { listen_info: ListenInfo
     ; search_str: string }
 
+type ConnectToMeMessage = 
+    { listen_info: ListenInfo
+    ; remote_nick: NickData.T }
+
+type MyNickMessage = { nick: NickData.T }
+
+type GetMessage = 
+    { filepath: string
+    /// 1 = beginning of file
+    ; start_at_byte: int64 }
+
+type DirectionMessage =
+    { direction: Direction.T
+    ; priority: int }
+
+type KeyMessage = { key: KeyData.T }
+
+type FileLengthMessage = { file_length: PositiveInt.T }
+
 // domain models (for State environments)
 type ConnectedEnv = { connect_info: ConnectionInfo }
 
@@ -372,6 +419,10 @@ type DcppReceiveMessage =
 | ChatMessage of ChatMessageMessage
 | MyInfo of MyInfoMessage
 | IgnoreIt
+| MyNick of MyNickMessage
+| Direction of DirectionMessage
+| Key of KeyMessage
+| FileLength of FileLengthMessage
 
 type DcppSendMessage =
 | ValidateNick of ValidateNickMessage
@@ -379,6 +430,13 @@ type DcppSendMessage =
 | Version
 | MyInfo of MyInfoMessage
 | Search of SearchMessage
+| ConnectToMe of ConnectToMeMessage
+| MyNick of MyNickMessage
+| Get of GetMessage
+| Lock of LockMessage
+| Send
+| Direction of DirectionMessage
+| Key of KeyMessage
 
 type SendAction =
 | SendNick of NickData.T * KeyData.T
@@ -442,7 +500,7 @@ let DCNstring_to_DcppMessage input =
         | Regex "^\$Lock (.+) Pk=(.+)\|$" [ lock; pk ] ->
             let! lock_data = LockData.create << DCNtoString <| lock
             let! pk_data = PkData.create pk // TODO check for what fields DCN encoding/decoding should be happening
-            return Lock {
+            return DcppReceiveMessage.Lock {
                 lock = lock_data
                 pk = pk_data
             }
@@ -496,6 +554,29 @@ let DCNstring_to_DcppMessage input =
             }
         | Regex "^\$Search .*\|$" [] ->
             return IgnoreIt
+        | Regex "^\$MyNick (.+)\|$" [nick_str] ->
+            let! nick_data = NickData.create nick_str
+            return DcppReceiveMessage.MyNick {
+                nick = nick_data
+            }
+        | Regex "^\$Direction (Download|Upload) (\d+)\|$" [direction; priority] ->
+            
+            let! direction_data = Direction.create direction
+            let! priority_data = 
+                try Convert.ToInt32 priority |> Success
+                with ex -> Failure ex
+
+            return DcppReceiveMessage.Direction {
+                DirectionMessage.direction = direction_data
+                DirectionMessage.priority = priority_data
+            }
+        | Regex "^\$FileLength (.+)\|$" [ length_str ] ->
+            let! file_length = PositiveInt.create length_str
+            
+            return FileLength {
+                file_length = file_length
+            }
+        // TODO add parsing of Key messages (note that they are not strings, they are bytes)
         | _ ->
             return! Failure "Couldn't parse"
     }
@@ -505,31 +586,39 @@ let DcppMessage_to_bytes dcpp_message =
     match dcpp_message with
     | DcppSendMessage.Search s_msg ->
         [
-            "$Search " |> getBytes |> Result.get;
-            IpAddress.getBytes s_msg.listen_info.ip;
-            ":" |> getBytes |> Result.get;
-            (PortData.unwrap s_msg.listen_info.port).ToString() |> getBytes |> Result.get;
-            " " |> getBytes |> Result.get;
-            "F?F?0?1?" |> getBytes |> Result.get;
-            s_msg.search_str |> getBytes |> Result.get; // TODO validate search_str
-            "$$" |> getBytes |> Result.get;
+            "$Search " |> getBytes |> Result.get
+            IpAddress.getBytes s_msg.listen_info.ip
+            ":" |> getBytes |> Result.get
+            (PortData.unwrap s_msg.listen_info.port).ToString() |> getBytes |> Result.get
+            " " |> getBytes |> Result.get
+            "F?F?0?1?" |> getBytes |> Result.get
+            s_msg.search_str |> getBytes |> Result.get // TODO validate search_str
+            "$$" |> getBytes |> Result.get
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
     | DcppSendMessage.MyPass mp_msg ->
         [
-            "$MyPass " |> getBytes |> Result.get;
-            PasswordData.apply ASCIIString.getBytes mp_msg.password;
+            "$MyPass " |> getBytes |> Result.get
+            PasswordData.apply ASCIIString.getBytes mp_msg.password
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
 
     | DcppSendMessage.ValidateNick vn_msg ->
         [
-            "$Key " |> getBytes |> Result.get;
-            KeyData.unwrap vn_msg.key;
-            "|$ValidateNick " |> getBytes |> Result.get;
-            NickData.apply ASCIIString.getBytes vn_msg.nick;
+            // TODO extract key into separate message
+            "$Key " |> getBytes |> Result.get
+            KeyData.unwrap vn_msg.key
+            "|$ValidateNick " |> getBytes |> Result.get
+            NickData.apply ASCIIString.getBytes vn_msg.nick
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    | DcppSendMessage.Key k_msg ->
+        [
+            "$Key " |> getBytes |> Result.get
+            KeyData.unwrap k_msg.key
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
@@ -537,14 +626,68 @@ let DcppMessage_to_bytes dcpp_message =
         "$Version 1.0091|" |> getBytes |> Result.get
     | DcppSendMessage.MyInfo mi_msg ->
         [
-            "$MyINFO $ALL " |> getBytes |> Result.get;
-            NickData.apply ASCIIString.getBytes mi_msg.nick;
-            " $ $" |> getBytes |> Result.get;
-            [|0x35uy; 0x30uy; 0x01uy|];
-            "$$0$" |> getBytes |> Result.get;
+            "$MyINFO $ALL " |> getBytes |> Result.get
+            NickData.apply ASCIIString.getBytes mi_msg.nick
+            " $ $" |> getBytes |> Result.get
+            [|0x35uy; 0x30uy; 0x01uy|]
+            "$$0$" |> getBytes |> Result.get
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
+    | DcppSendMessage.ConnectToMe cm_msg ->
+        [
+            "$ConnectToMe " |> getBytes |> Result.get
+            NickData.apply ASCIIString.getBytes cm_msg.remote_nick
+            " " |> getBytes |> Result.get
+            IpAddress.getBytes cm_msg.listen_info.ip
+            ":" |> getBytes |> Result.get
+            (PortData.unwrap cm_msg.listen_info.port).ToString() |> getBytes |> Result.get
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    | DcppSendMessage.MyNick mn_msg ->
+        [
+            "$MyNick " |> getBytes |> Result.get
+            NickData.apply ASCIIString.getBytes mn_msg.nick
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    // TODO check all DCN related stuff and make it secure and whatnot
+    | DcppSendMessage.Get g_msg ->
+        [
+            "$Get " |> getBytes |> Result.get
+            g_msg.filepath |> getBytes |> Result.get
+            "$" |> getBytes |> Result.get
+            g_msg.start_at_byte.ToString() |> getBytes |> Result.get
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    | DcppSendMessage.Lock l_msg ->
+        [
+            "$Lock " |> getBytes |> Result.get
+            LockData.apply ASCIIString.getBytes l_msg.lock |> bytesToDCN
+            " Pk=" |> getBytes |> Result.get
+            PkData.apply getBytes l_msg.pk |> Result.get 
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    | DcppSendMessage.Direction d_msg ->
+        let direction_str =
+            match d_msg.direction with
+            | Direction.Upload -> "Upload"
+            | Direction.Download -> "Download"
+        let priority_str = d_msg.priority.ToString() 
+
+        [
+            "$Direction " |> getBytes |> Result.get
+            direction_str |> getBytes |> Result.get
+            " " |> getBytes |> Result.get
+            priority_str |> getBytes |> Result.get
+            "|" |> getBytes |> Result.get
+        ]
+        |> Array.concat
+    | DcppSendMessage.Send ->
+        "$Send|" |> getBytes |> Result.get
 
 let UserMap = new MapWithArbKey<NickData.T, User>(fun user -> user.nick)
 // domain logic (functions)
@@ -734,7 +877,7 @@ let private dispatch_action (log: ILogger) (create_transport: CreateTransport) a
 let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent) (env: ReceivedHandlerEnv) dcpp_msg =
     // log.Trace "Received message %A" dcpp_msg
     match dcpp_msg with
-    | Lock msg ->
+    | DcppReceiveMessage.Lock msg ->
         agent.post << Send <| SendNick (env.nick, KeyData.create msg.lock)
         env
     | ValidateDenied ->
@@ -796,6 +939,12 @@ let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent
         env
     | OpList msg ->
         agent.post << Main <| OpListed msg.nicks
+        env
+    | DcppReceiveMessage.FileLength _ 
+    | DcppReceiveMessage.Key _
+    | DcppReceiveMessage.MyNick _
+    | DcppReceiveMessage.Direction _ ->
+        log.Error "Did not expect to receive client-only message from server: %A" dcpp_msg
         env
     | IgnoreIt ->
         env
