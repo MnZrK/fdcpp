@@ -137,7 +137,7 @@ module Network =
         
         let subject = new Subject<IRawTransport>()
 
-        let child_transports = Observable.toList subject |> Async.AwaitObservable 
+        // let child_transports = Observable.toList subject |> Async.AwaitObservable 
 
         let loop_accept () = 
             let rec loop() = 
@@ -194,9 +194,9 @@ module Network =
             (fun () ->
                 subject.OnCompleted() 
                 // BUG TODO fix memory leak!!! we are collecting ALL ever created sockets
-                child_transports 
-                |> Async.RunSynchronously
-                |> Seq.iter (fun t -> t.Dispose())
+                // child_transports 
+                // |> Async.RunSynchronously
+                // |> Seq.iter (fun t -> t.Dispose())
                 cts.Cancel()
                 (cts :> IDisposable).Dispose()
                 listener.Close() 

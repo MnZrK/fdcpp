@@ -193,7 +193,7 @@ module ``startQueue Tests`` =
                 
                 test <@ !create_dummy_transport_has_been_called @>
 
-                event.Trigger <| Lock {
+                event.Trigger <| DcppReceiveMessage.Lock {
                     lock = lock
                     pk = pk
                 }
@@ -253,7 +253,7 @@ module ``startQueue Tests`` =
                 do! Async.Sleep timeout
                 test <@ !create_dummy_transport_has_been_called @>
 
-                event.Trigger <| Lock {
+                event.Trigger <| DcppReceiveMessage.Lock {
                     lock = lock
                     pk = pk
                 }
@@ -316,7 +316,7 @@ module ``startQueue Tests`` =
                 do! Async.Sleep timeout
                 test <@ !create_dummy_transport_has_been_called @>
 
-                event.Trigger <| Lock {
+                event.Trigger <| DcppReceiveMessage.Lock {
                     lock = lock
                     pk = pk
                 }
@@ -353,7 +353,7 @@ module ``infrastructure Tests`` =
         let input = "$Lock EXTENDEDPROTOCOLL\98W0q0:gmyMHSWL1qN4>v9YkYwg6 Pk=PtokaX|"
 
         let res = DCNstring_to_DcppMessage input
-        test <@ res = Success (Lock {
+        test <@ res = Success (DcppReceiveMessage.Lock {
             lock = LockData.create "EXTENDEDPROTOCOLL\98W0q0:gmyMHSWL1qN4>v9YkYwg6" |> Result.get
             pk = PkData.create "PtokaX" |> Result.get
         }) @> 

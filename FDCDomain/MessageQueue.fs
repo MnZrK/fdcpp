@@ -380,6 +380,10 @@ type KeyMessage = { key: KeyData.T }
 
 type FileLengthMessage = { file_length: PositiveInt.T }
 
+type SRMessage = 
+    { nick_who_has_file: NickData.T
+    ; filepath: string }
+
 // domain models (for State environments)
 type ConnectedEnv = { connect_info: ConnectionInfo }
 
@@ -427,6 +431,7 @@ type DcppReceiveMessage =
 | Direction of DirectionMessage
 | Key of KeyMessage
 | FileLength of FileLengthMessage
+| SR of SRMessage
 
 type DcppSendMessage =
 | ValidateNick of ValidateNickMessage
@@ -580,6 +585,13 @@ let DCNstring_to_DcppMessage input =
             
             return FileLength {
                 file_length = file_length
+            }
+        | Regex "^\$SR (\w+) (.+?).\d+ \d+/\d+.TTH:\w+ \(.+?\)\|$" [ nick_str; path_str ] ->
+            let! nick_data = NickData.create nick_str
+            
+            return SR {
+                SRMessage.filepath = path_str
+                SRMessage.nick_who_has_file = nick_data
             }
         // TODO add parsing of Key messages (note that they are not strings, they are bytes)
         | _ ->
@@ -744,7 +756,7 @@ let private dispatch_send_action action (state, deps) =
 
         state |> Success
     | ConnectToMe action, LoggedIn env ->
-        let msg = DcppSendMessage.ConnectToMe { listen_info = action.listen_info; remove_nick = action.remote_nick }
+        let msg = DcppSendMessage.ConnectToMe { listen_info = action.listen_info; remote_nick = action.remote_nick }
 
         deps.transport.Write msg
 
@@ -954,6 +966,7 @@ let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent
     | DcppReceiveMessage.FileLength _ 
     | DcppReceiveMessage.Key _
     | DcppReceiveMessage.MyNick _
+    | DcppReceiveMessage.SR _
     | DcppReceiveMessage.Direction _ ->
         log.Error "Did not expect to receive client-only message from server: %A" dcpp_msg
         env

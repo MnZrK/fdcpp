@@ -43,11 +43,39 @@ let main argv =
                 let listenport = PortData.unwrap settings.listen_info.port
                 let udpobs, disposable = Network.start_udpserver eom_marker listenport
 
-                try 
+                try
                     udpobs
                     |> Observable.map getString
                     |> Observable.asUpdates
                     |> Observable.add (log.Trace "Got message %A")
+
+                    let wait_for_search_result = 
+                        udpobs
+                        |> Observable.first
+                        |> Async.AwaitObservable
+
+                    use tcpserver = Network.start_tcpserver eom_marker listenport
+                    tcpserver.Accepted
+                    |> Observable.asUpdates
+                    |> Observable.add (log.Trace "Got message from tcp server %A")
+
+                    tcpserver.Accepted
+                    |> Observable.add (fun transport ->
+                        let received_strings =  
+                            transport.Received
+                            |> Observable.map getString
+
+                        let received_msgs =
+                            received_strings
+                            |> Observable.map (fun x -> Result.success_workflow_with_string_failures {
+                                let! str = x
+                                let! msg = DCNstring_to_DcppMessage str
+                                return msg
+                            })
+                        
+                        received_msgs 
+                        |> Observable.add (log.Info "Got message from tcp socket %A")
+                    )
 
                     Async.RunSynchronously wait_for_login
 
@@ -58,9 +86,22 @@ let main argv =
                         search_str = search_str
                     }
 
+                    let (SR search_res) = 
+                        wait_for_search_result 
+                        |> Async.RunSynchronously 
+                        |> getString 
+                        |> Result.get 
+                        |> DCNstring_to_DcppMessage
+                        |> Result.get
+
+                    agent.post << Send <| ConnectToMe {
+                        listen_info = settings.listen_info
+                        remote_nick = search_res.nick_who_has_file
+                    }
+
                     let need_exit = ref false
                     Console.CancelKeyPress |> Event.add (fun x ->
-                        log.Info "Got ctrl-c" 
+                        log.Warn "Got ctrl-c" 
                         x.Cancel <- true
                         need_exit := true
                     )
