@@ -20,6 +20,20 @@ open FDCUtil.Reactive
 let timeout = 100
 
 [<Fact>]
+let ``Should not cancel sync task`` () =
+    let action() = 
+        Thread.Sleep timeout
+
+    let cts = new CancellationTokenSource()
+    let task = Task.Run(action, cts.Token)
+
+    test <@ task.IsCanceled = false @>
+
+    cts.Cancel()
+
+    test <@ task.IsCanceled = false @>
+
+[<Fact>]
 let ``Should be executing both subscriptions`` () =
     let subject = new Subject<int>()
     let obs = Observable.asObservable subject
