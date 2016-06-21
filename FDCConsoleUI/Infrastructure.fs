@@ -120,7 +120,7 @@ module Network =
             member __.Dispose() = dispose() }         
     }
 
-    let start_tcpserver eom_marker (port: int) =
+    let start_tcpserver som_marker_maybe eom_marker (port: int) =
         printfn "Starting server..."
         let host = "0.0.0.0"
         let ipaddress = IPAddress.Parse host
@@ -146,7 +146,7 @@ module Network =
                 printfn "Accepted request"
 
                 let buffer_size = 256
-                let obs, dispose_obs = fetch_concat_split_from_socket buffer_size eom_marker socket
+                let obs, dispose_obs = fetch_concat_split_from_socket buffer_size som_marker_maybe eom_marker socket
 
                 let inner_cts = new CancellationTokenSource()
                 let write_agent = MailboxProcessor.Start((fun inbox -> 
@@ -208,7 +208,7 @@ module Network =
             member __.Accepted = Observable.asObservable subject
             member __.Dispose() = dispose() }
 
-    let start_udpserver eom_marker (port: int) =
+    let start_udpserver som_marker_maybe eom_marker (port: int) =
         let ipaddress = IPAddress.Loopback
         let endpoint = IPEndPoint(ipaddress, port)
 
@@ -217,7 +217,7 @@ module Network =
         let receiver = new UdpClient(port)
         
         let buffer_size = 256
-        let obs, dispose_obs = fetch_concat_split_from_socket buffer_size eom_marker receiver.Client 
+        let obs, dispose_obs = fetch_concat_split_from_socket buffer_size som_marker_maybe eom_marker receiver.Client 
 
         let dispose = 
             (fun () ->

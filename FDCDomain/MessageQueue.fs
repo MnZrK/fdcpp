@@ -99,6 +99,9 @@ let mapNullString f (s: string) =
 module ASCIIString =
     type T = ASCIIString of string
 
+    let isAsciiByte b = 
+        126uy >= b && b >= 32uy
+
     let create =
         function
         | null -> StringError.Missing |> Failure
@@ -108,7 +111,7 @@ module ASCIIString =
                 <| (fun c ->
                         match getByte c with
                         | Success b ->
-                            126uy >= b && b >= 32uy
+                            isAsciiByte b
                         | _ ->
                             false
                     )
@@ -368,9 +371,7 @@ type ConnectToMeMessage =
 type MyNickMessage = { nick: NickData.T }
 
 type GetMessage = 
-    { filepath: string
-    /// 1 = beginning of file
-    ; start_at_byte: int64 }
+    { tth: string }
 
 type DirectionMessage =
     { direction: Direction.T
@@ -378,11 +379,10 @@ type DirectionMessage =
 
 type KeyMessage = { key: KeyData.T }
 
-type FileLengthMessage = { file_length: PositiveInt.T }
-
 type SRMessage = 
     { nick_who_has_file: NickData.T
-    ; filepath: string }
+    ; filepath: string
+    ; tth: string }
 
 // domain models (for State environments)
 type ConnectedEnv = { connect_info: ConnectionInfo }
@@ -430,8 +430,8 @@ type DcppReceiveMessage =
 | MyNick of MyNickMessage
 | Direction of DirectionMessage
 | Key of KeyMessage
-| FileLength of FileLengthMessage
 | SR of SRMessage
+| Supports
 
 type DcppSendMessage =
 | ValidateNick of ValidateNickMessage
@@ -443,9 +443,9 @@ type DcppSendMessage =
 | MyNick of MyNickMessage
 | Get of GetMessage
 | Lock of LockMessage
-| Send
 | Direction of DirectionMessage
 | Key of KeyMessage
+| Supports
 
 type SendAction =
 | SendNick of NickData.T * KeyData.T
@@ -453,6 +453,7 @@ type SendAction =
 | RetryNick of NickData.T
 | Search of SearchAction
 | ConnectToMe of ConnectToMeAction
+| SendSupports 
 
 /// Actions which are available only for LoggedIn state
 type MainAction = 
@@ -564,6 +565,8 @@ let DCNstring_to_DcppMessage input =
             }
         | Regex "^\$Search .*\|$" [] ->
             return IgnoreIt
+        | Regex "^\$Supports .*\|$" [] ->
+            return DcppReceiveMessage.Supports
         | Regex "^\$MyNick (.+)\|$" [nick_str] ->
             let! nick_data = NickData.create nick_str
             return DcppReceiveMessage.MyNick {
@@ -580,18 +583,13 @@ let DCNstring_to_DcppMessage input =
                 DirectionMessage.direction = direction_data
                 DirectionMessage.priority = priority_data
             }
-        | Regex "^\$FileLength (.+)\|$" [ length_str ] ->
-            let! file_length = PositiveInt.create length_str
-            
-            return FileLength {
-                file_length = file_length
-            }
-        | Regex "^\$SR (\w+) (.+?).\d+ \d+/\d+.TTH:\w+ \(.+?\)\|$" [ nick_str; path_str ] ->
+        | Regex "^\$SR (\w+) (.+?).\d+ \d+/\d+.TTH:(.+) \(.+?\)\|$" [ nick_str; path_str; tth_str ] ->
             let! nick_data = NickData.create nick_str
             
             return SR {
                 SRMessage.filepath = path_str
                 SRMessage.nick_who_has_file = nick_data
+                SRMessage.tth = tth_str
             }
         // TODO add parsing of Key messages (note that they are not strings, they are bytes)
         | _ ->
@@ -621,7 +619,8 @@ let DcppMessage_to_bytes dcpp_message =
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
-
+    | DcppSendMessage.Supports ->
+        "$Supports ADCGet|" |> getBytes |> Result.get
     | DcppSendMessage.ValidateNick vn_msg ->
         [
             // TODO extract key into separate message
@@ -671,14 +670,16 @@ let DcppMessage_to_bytes dcpp_message =
         |> Array.concat
     // TODO check all DCN related stuff and make it secure and whatnot
     | DcppSendMessage.Get g_msg ->
-        [
-            "$Get " |> getBytes |> Result.get
-            g_msg.filepath |> getBytes |> Result.get
-            "$" |> getBytes |> Result.get
-            g_msg.start_at_byte.ToString() |> getBytes |> Result.get
-            "|" |> getBytes |> Result.get
-        ]
-        |> Array.concat
+        let res =
+            [
+                "$ADCGET file TTH/" |> getBytes |> Result.get
+                g_msg.tth |> getBytes |> Result.get
+                " 0 1048576 ZL1|" |> getBytes |> Result.get
+            ]
+            |> Array.concat
+        printfn "sending get %A" (getString res)
+        res
+
     | DcppSendMessage.Lock l_msg ->
         [
             "$Lock " |> getBytes |> Result.get
@@ -703,8 +704,6 @@ let DcppMessage_to_bytes dcpp_message =
             "|" |> getBytes |> Result.get
         ]
         |> Array.concat
-    | DcppSendMessage.Send ->
-        "$Send|" |> getBytes |> Result.get
 
 let UserMap = new MapWithArbKey<NickData.T, User>(fun user -> user.nick)
 // domain logic (functions)
@@ -754,6 +753,9 @@ let private dispatch_send_action action (state, deps) =
 
         deps.transport.Write msg
 
+        state |> Success
+    | SendSupports, LoggedIn env ->
+        deps.transport.Write Supports
         state |> Success
     | ConnectToMe action, LoggedIn env ->
         let msg = DcppSendMessage.ConnectToMe { listen_info = action.listen_info; remote_nick = action.remote_nick }
@@ -963,7 +965,6 @@ let private handle_received_message (log: ILogger) pass_data_maybe (agent: Agent
     | OpList msg ->
         agent.post << Main <| OpListed msg.nicks
         env
-    | DcppReceiveMessage.FileLength _ 
     | DcppReceiveMessage.Key _
     | DcppReceiveMessage.MyNick _
     | DcppReceiveMessage.SR _

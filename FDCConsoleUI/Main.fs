@@ -39,9 +39,10 @@ let main argv =
                     |> Async.Ignore
 
                 let eom_marker = Convert.ToByte '|'
+                let som_marker_maybe = Some (Convert.ToByte '$')
                 let listenip = IpAddress.unwrap settings.listen_info.ip
                 let listenport = PortData.unwrap settings.listen_info.port
-                let udpobs, disposable = Network.start_udpserver eom_marker listenport
+                let udpobs, disposable = Network.start_udpserver som_marker_maybe eom_marker listenport
 
                 try
                     udpobs
@@ -54,28 +55,11 @@ let main argv =
                         |> Observable.first
                         |> Async.AwaitObservable
 
-                    use tcpserver = Network.start_tcpserver eom_marker listenport
+                    use tcpserver = Network.start_tcpserver som_marker_maybe eom_marker listenport
                     tcpserver.Accepted
                     |> Observable.asUpdates
                     |> Observable.add (log.Trace "Got message from tcp server %A")
 
-                    tcpserver.Accepted
-                    |> Observable.add (fun transport ->
-                        let received_strings =  
-                            transport.Received
-                            |> Observable.map getString
-
-                        let received_msgs =
-                            received_strings
-                            |> Observable.map (fun x -> Result.success_workflow_with_string_failures {
-                                let! str = x
-                                let! msg = DCNstring_to_DcppMessage str
-                                return msg
-                            })
-                        
-                        received_msgs 
-                        |> Observable.add (log.Info "Got message from tcp socket %A")
-                    )
 
                     Async.RunSynchronously wait_for_login
 
@@ -93,6 +77,77 @@ let main argv =
                         |> Result.get 
                         |> DCNstring_to_DcppMessage
                         |> Result.get
+                    log.Info "got search result %A" search_res
+
+                    tcpserver.Accepted
+                    |> Observable.add (fun transport ->
+                        let received_msgs =
+                            transport.Received
+                            |> Observable.map getString
+                            |> Observable.map (fun x -> Result.success_workflow_with_string_failures {
+                                let! str = x
+                                let! msg = DCNstring_to_DcppMessage str
+                                return msg
+                            })
+                        
+                        let enum = Observable.getEnumerator received_msgs
+                        // use dispose_observer = 
+                        //     received_msgs 
+                        //     |> Observable.subscribe (log.Info "Got message from tcp socket %A")
+
+                        let read_msg() = enum.MoveNext() |> ignore; enum.Current |> Result.get
+
+                        log.Trace "trying to read message synchronously"
+                        let (DcppReceiveMessage.MyNick mynick_msg) = read_msg() 
+                        log.Trace "rceived %A" mynick_msg
+                        log.Trace "trying to read message synchronously"
+                        let (DcppReceiveMessage.Lock lock_msg) = read_msg()
+
+                        log.Trace "sending nick"
+                        transport.Write 
+                        <| DcppMessage_to_bytes (DcppSendMessage.MyNick {
+                            MyNickMessage.nick = settings.nick // TODO get nick from state
+                        })
+
+                        log.Trace "sending lock"
+                        transport.Write 
+                        <| DcppMessage_to_bytes (DcppSendMessage.Lock {
+                            LockMessage.lock = LockData.generate()
+                            LockMessage.pk = PkData.create "abcabcabcabcabca" |> Result.get
+                        })
+                        
+                        log.Trace "sending supports"
+                        transport.Write 
+                        <| DcppMessage_to_bytes (DcppSendMessage.Supports)
+
+                        log.Trace "sending direction"
+                        transport.Write 
+                        <| DcppMessage_to_bytes (DcppSendMessage.Direction {
+                            direction = Direction.Download
+                            priority = System.Random().Next()
+                        })
+
+                        log.Trace "sending key"
+                        transport.Write
+                        <| DcppMessage_to_bytes (DcppSendMessage.Key {
+                            key = KeyData.create lock_msg.lock
+                        })
+
+                        // let supports_msg = read_msg()
+                        // log.Info "got supports %A" supports_msg
+
+                        let (DcppReceiveMessage.Direction d_msg) = read_msg()
+                        log.Info "got message %A" d_msg
+                        
+                        log.Trace "sending get"
+                        transport.Write
+                        <| DcppMessage_to_bytes (DcppSendMessage.Get {
+                            GetMessage.tth = search_res.tth
+                        })
+                        
+                        use dispose_temp = transport.Received |> Observable.subscribe (fun x -> log.Info "got message %A" x)
+                        ()
+                    )
 
                     agent.post << Send <| ConnectToMe {
                         listen_info = settings.listen_info

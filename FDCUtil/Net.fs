@@ -19,7 +19,7 @@ module SocketExtensions =
             let beginSend(b,o,c,cb,s) = socket.BeginSend(b,o,c,SocketFlags.None,cb,s)
             Async.FromBeginEnd(buffer, offset, count, beginSend, socket.EndSend)
 
-let fetch_concat_split_from_socket buffer_size eom_marker (socket: System.Net.Sockets.Socket) =
+let fetch_concat_split_from_socket buffer_size som_marker_maybe eom_marker (socket: System.Net.Sockets.Socket) =
     let read () = 
         let buffer = Array.zeroCreate buffer_size
         socket.AsyncReceive(buffer, 0, buffer_size)
@@ -29,10 +29,11 @@ let fetch_concat_split_from_socket buffer_size eom_marker (socket: System.Net.So
             if bytes_read <= 0 then
                 [||]
             else
+                printfn "raw receiving %A" (System.Text.Encoding.ASCII.GetString (buffer.[0..bytes_read-1]))
                 buffer.[0..bytes_read-1] 
         )
 
-    Array.fetchConcatSplit eom_marker read 
+    Array.fetchConcatSplit som_marker_maybe eom_marker read 
 
 let concat_and_split_stream buffer_size eom_marker (stream: IO.Stream) =
     let rec read() = seq {

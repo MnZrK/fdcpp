@@ -20,6 +20,37 @@ open FDCUtil.Reactive
 let timeout = 100
 
 [<Fact>]
+let ``Should await observable`` () =
+    let subject = new Subject<int>()
+    let obs = Observable.asObservable subject
+    
+    let enumerator = Observable.getEnumerator obs
+
+    subject.OnNext(10)
+    test <@ enumerator.MoveNext() = true @>
+    let res1 = enumerator.Current
+    test <@ res1 = 10 @>
+
+    subject.OnNext(20)
+    test <@ enumerator.MoveNext() = true @>
+    let res2 = enumerator.Current
+
+    test <@ res2 = 20 @>
+
+    subject.OnNext(30)
+    subject.OnNext(40)
+    
+    test <@ enumerator.MoveNext() = true @>
+    let res3 = enumerator.Current
+    test <@ res3 = 30 @>
+    
+    test <@ enumerator.MoveNext() = true @>
+    let res4 = enumerator.Current
+    test <@ res4 = 40 @>
+
+    // enumerator.MoveNext() |> ignore // this waits infinitely 
+
+[<Fact>]
 let ``Should not cancel sync task`` () =
     let action() = 
         Thread.Sleep timeout
@@ -333,7 +364,7 @@ let ``Should parse stream using async wrapper around sync read`` buffer_size =
             )
     }
     
-    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
+    let obs, dispose_obs = Array.fetchConcatSplit None eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
@@ -366,7 +397,7 @@ let ``Should parse stream using ReadAsync`` buffer_size =
         return res
     }
     
-    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
+    let obs, dispose_obs = Array.fetchConcatSplit None eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>
@@ -399,7 +430,7 @@ let ``Should parse stream using AsyncRead`` buffer_size =
         return res
     }
     
-    let obs, dispose_obs = Array.fetchConcatSplit eom_marker read_async
+    let obs, dispose_obs = Array.fetchConcatSplit None eom_marker read_async
     let msgs = Observable.toArray obs |> Async.AwaitObservable |> Async.RunSynchronously |> Array.map System.Text.Encoding.ASCII.GetString
 
     test <@ msgs.[0] = "$Lock EXTENDEDPROTOCOL_hub Pk=1.0.9.MegaHub specific|" @>

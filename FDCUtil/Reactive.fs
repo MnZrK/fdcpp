@@ -39,14 +39,14 @@ module AsyncResult =
 module Array =
     /// Fetch the data using `readf_async`, "concatenate" all the data in a single stream
     /// and then split it into messages where end of each message is indicated by `eom_marker`
-    let fetchConcatSplit eom_marker readf_async =
+    let fetchConcatSplit som_marker_maybe eom_marker readf_async =
         let subject = new Subject<'a[]>()
 
         let rec loop_find_eom loop acc msg = async {
             let i_maybe = Array.tryFindIndex ((=) eom_marker) msg
             match i_maybe with
             | None ->
-                return! loop (msg::acc)
+                return! loop (Some (msg::acc))
             | Some i ->
                 if i < (msg.Length - 1) then
                     let msg' = 
@@ -54,17 +54,25 @@ module Array =
                         |> List.rev
                         |> Array.concat
                     subject.OnNext msg'
-                    return! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+                    match som_marker_maybe with
+                    | None -> return! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+                    | Some som_marker ->
+                        // TODO what if binary file starts with som_marker? need to fix it
+                        if msg.[i+1] = som_marker then
+                            return! loop_find_eom loop [] msg.[(i+1)..(msg.Length-1)]
+                        else    
+                            subject.OnNext(msg.[(i+1)..(msg.Length-1)])
+                            return! loop None
                 else
                     let msg' =
                         msg.[0..i]::acc
                         |> List.rev
                         |> Array.concat
                     subject.OnNext msg'
-                    return! loop []
+                    return! loop (Some [])
         }
 
-        let rec loop acc = async {
+        let rec loop acc_maybe = async {
             let! msg_res = readf_async()
             match msg_res with
             | Failure ex ->
@@ -72,10 +80,24 @@ module Array =
             | Success [||] ->
                 subject.OnCompleted() // TODO check again all the error handling and disposing! of subjects and whatnot. remember that there are two different subjects with the same name, and one of them is disposable and another is not
             | Success msg ->
-                return! loop_find_eom loop acc msg
+                match acc_maybe with
+                | None -> 
+                    subject.OnNext(msg)
+                    return! loop None
+                | Some [] ->
+                    match som_marker_maybe with
+                    | None -> return! loop_find_eom loop [] msg 
+                    | Some som_marker ->
+                        if msg.[0] = som_marker then
+                            return! loop_find_eom loop [] msg
+                        else    
+                            subject.OnNext(msg)
+                            return! loop None
+                | Some acc ->
+                    return! loop_find_eom loop acc msg
         }
         let cts = new CancellationTokenSource()
-        let lazystart = lazy (Async.Start(loop [], cts.Token))
+        let lazystart = lazy (Async.Start(loop (Some []), cts.Token))
 
         let obs = Observable.asObservable subject
         let deferred = 
