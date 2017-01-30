@@ -16,9 +16,6 @@
                 <TrailingNewLineInFile>
                     <Enabled>False</Enabled>
                 </TrailingNewLineInFile>
-                <TrailingWhitespaceOnLine>
-                    <Enabled>False</Enabled>
-                </TrailingWhitespaceOnLine>
             </Rules>
         </Typography>
         <SourceLength>
