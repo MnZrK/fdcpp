@@ -14,22 +14,27 @@ let deployDir = "./deploy/"
 let appReferences  =
     !! "/**/*.csproj"
       ++ "/**/*.fsproj"
+// TODO currently appReferences include testsReferences... may be we should remove them ? 
 
 let testsReferences = 
     !! "**/*.Tests.fsproj"
       ++ "**/*.Tests.csproj"
 
 // version info
-let version = "0.1"  // or retrieve from CI server
+let version = "0.1"  
 
 // Targets
 Target "Clean" (fun _ ->
     CleanDirs [buildDir; deployDir]
+    !! "**/bin"
+    ++ "**/obj"
+    |> DeleteDirs
 )
 
 Target "Lint" (fun _ ->
     appReferences
-        |> Seq.iter (FSharpLint id))
+        |> Seq.iter (FSharpLint id)
+)
 
 Target "Build" (fun _ ->
     MSBuildDebug buildDir "Build" appReferences
@@ -71,6 +76,16 @@ Target "Deploy" (fun _ ->
 "Clean"
   ==> "BuildRelease"
   ==> "Deploy"
+
+// Build order
+"Clean"
+  ==> "BuildTests"
+  ==> "RunTests"
+
+// Build order
+"Clean"
+  ==> "BuildTests"
+  ==> "RunTestsSequential"
 
 // start build
 RunTargetOrDefault "Build"
