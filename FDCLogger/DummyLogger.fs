@@ -2,7 +2,7 @@ module FDCLogger.DummyLogger
 
 open System
 // TODO move ILogger somewhere else and update references
-open FDCDomain.MessageQueue
+open FDCDomain
 
 type Logger() = 
     let dummy_log fmt = 

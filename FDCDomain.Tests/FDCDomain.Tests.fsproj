@@ -48,7 +48,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <Compile Include="MessageQueueTests.fs" />
+    <Compile Include="DomainLogicTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FDCUtil\FDCUtil.fsproj">

@@ -16,7 +16,7 @@ open FSharpx.Control.Observable
 open FSharp.Configuration
 
 open FDCUtil
-open FDCDomain.MessageQueue
+open FDCDomain
 open FDCLogger
 
 // persistency layer

@@ -2,8 +2,7 @@ module FDCLogger.NLogLogger
 
 open System
 
-// TODO move ILogger somewhere else and update references
-open FDCDomain.MessageQueue
+open FDCDomain
 
 /// All initial initialization for the logger is done in the 
 /// static constructor, ie when the object of the class is 

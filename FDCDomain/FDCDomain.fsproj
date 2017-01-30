@@ -50,7 +50,15 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="MessageQueue.fs" />
+    <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Errors.fs" />
+    <Compile Include="Utilities.fs" />
+    <Compile Include="BasePrimitiveTypes.fs" />
+    <Compile Include="PrimitiveTypes.fs" />
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="Models.fs" />
+    <Compile Include="Presentation.fs" />
+    <Compile Include="DomainLogic.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FDCUtil\FDCUtil.fsproj">

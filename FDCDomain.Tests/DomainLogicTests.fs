@@ -1,4 +1,4 @@
-module FDCDomain.MessageQueue.Tests
+module FDCDomain.DomainLogic.Tests
 
 open System
 
@@ -10,7 +10,7 @@ open FsCheck.Xunit
 open FDCTestHelper
 open FDCUtil
 
-open FDCDomain.MessageQueue
+open FDCDomain
 
 module ``Utilities Tests`` = 
 
