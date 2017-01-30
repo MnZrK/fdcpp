@@ -27,12 +27,12 @@ let ``Should await observable`` () =
     let enumerator = Observable.getEnumerator obs
 
     subject.OnNext(10)
-    test <@ enumerator.MoveNext() = true @>
+    test <@ enumerator.MoveNext() @>
     let res1 = enumerator.Current
     test <@ res1 = 10 @>
 
     subject.OnNext(20)
-    test <@ enumerator.MoveNext() = true @>
+    test <@ enumerator.MoveNext() @>
     let res2 = enumerator.Current
 
     test <@ res2 = 20 @>
@@ -40,11 +40,11 @@ let ``Should await observable`` () =
     subject.OnNext(30)
     subject.OnNext(40)
     
-    test <@ enumerator.MoveNext() = true @>
+    test <@ enumerator.MoveNext() @>
     let res3 = enumerator.Current
     test <@ res3 = 30 @>
     
-    test <@ enumerator.MoveNext() = true @>
+    test <@ enumerator.MoveNext() @>
     let res4 = enumerator.Current
     test <@ res4 = 40 @>
 
@@ -58,11 +58,11 @@ let ``Should not cancel sync task`` () =
     let cts = new CancellationTokenSource()
     let task = Task.Run(action, cts.Token)
 
-    test <@ task.IsCanceled = false @>
+    test <@ not task.IsCanceled @>
 
     cts.Cancel()
 
-    test <@ task.IsCanceled = false @>
+    test <@ not task.IsCanceled @>
 
 [<Fact>]
 let ``Should be executing both subscriptions`` () =
@@ -145,9 +145,9 @@ let ``Should not be executing onNext after onError`` () =
 
     Async.Sleep(timeout) |> Async.RunSynchronously
 
-    test <@ !failed = false @>
-    test <@ !got_error = true @>
-    test <@ !oncompleted_called = false @>
+    test <@ not !failed @>
+    test <@ !got_error @>
+    test <@ not !oncompleted_called @>
 
 [<Fact>]
 let ``Should not be executing onNext after onCompleted`` () =
@@ -176,9 +176,9 @@ let ``Should not be executing onNext after onCompleted`` () =
 
     Async.Sleep(timeout) |> Async.RunSynchronously
 
-    test <@ !failed = false @>
-    test <@ !completed = true @>
-    test <@ !onerror_called = false @>
+    test <@ not !failed @>
+    test <@ !completed @>
+    test <@ not !onerror_called @>
 
 [<Fact>]
 let ``Should not be executing onNext after dispose`` () =
@@ -209,9 +209,9 @@ let ``Should not be executing onNext after dispose`` () =
 
     Async.Sleep(timeout) |> Async.RunSynchronously
 
-    test <@ !failed = false @>
-    test <@ !onerror_called = false @>
-    test <@ !oncompleted_called = false @>
+    test <@ not !failed @>
+    test <@ not !onerror_called @>
+    test <@ not !oncompleted_called @>
 
 
 [<Fact>]
@@ -244,9 +244,9 @@ let ``Should not be executing onNext after onError with add`` () =
 
     Async.Sleep(timeout) |> Async.RunSynchronously
 
-    test <@ !failed = false @>
-    test <@ !got_error = true @>
-    test <@ !oncompleted_called = false @>
+    test <@ not !failed @>
+    test <@ !got_error @>
+    test <@ not !oncompleted_called @>
 
 [<Fact>]
 let ``Should not be executing onNext after onCompleted with add`` () =
@@ -278,9 +278,9 @@ let ``Should not be executing onNext after onCompleted with add`` () =
 
     Async.Sleep(timeout) |> Async.RunSynchronously
 
-    test <@ !failed = false @>
-    test <@ !completed = true @>
-    test <@ !onerror_called = false @>
+    test <@ not !failed @>
+    test <@ !completed @>
+    test <@ not !onerror_called @>
 
 [<Fact>]
 let ``Should not throw (but should fail) when reading more then content`` () =
@@ -307,7 +307,7 @@ let ``Should not invoke deferred observable if not subscribed`` () =
 
     Async.Sleep 1 |> Async.RunSynchronously 
 
-    test <@ !invoked = false @>
+    test <@ not !invoked @>
 
 [<Fact>]
 let ``Should invoke deferred observable when subscribed`` () =
@@ -324,7 +324,7 @@ let ``Should invoke deferred observable when subscribed`` () =
 
     Async.Sleep 1 |> Async.RunSynchronously 
 
-    test <@ !invoked = true @>
+    test <@ !invoked @>
 
 [<Fact>]
 let ``Should invoke deferred observable when subscribed with callbacks`` () =

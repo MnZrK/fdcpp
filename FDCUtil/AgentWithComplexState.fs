@@ -32,8 +32,71 @@ type T<'action, 'state, 'e> = {
     fetch: unit -> Result<'state, FetchError>
 }
 
-let fire_event (subject: Subject<_>) x = subject.OnNext x
+let private fire_event (subject: Subject<_>) x = subject.OnNext x
 
+let private process_post fire_error fire_state_changed f x (acc_state, acc_deps) = 
+    let fResult = 
+        try
+            f x (acc_state, acc_deps)
+            |> Result.mapFailure ActionFailure
+        with ex ->
+            ActionException ex |> Failure 
+
+    match fResult with
+    | Success (acc_state', acc_deps') ->
+        if (acc_state' <> acc_state) then
+            let full_state = acc_state, acc_deps
+            let full_state' = acc_state', acc_deps'
+            fire_state_changed ((full_state, full_state'))
+        (acc_state', acc_deps')
+    | Failure x ->
+        fire_error x
+        (acc_state, acc_deps)
+
+// it is fine to have a lot of parameters for functions with "dependency injection"
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "NumberOfItems", CheckId = "MaxNumberOfFunctionParameters")>]
+let private process_post_and_reply fire_error fire_state_changed f x reply (acc_state, acc_deps) =
+    let fResult =          
+        try
+            match f x (acc_state, acc_deps) with
+            | Success x -> Success x
+            | Failure e -> ActionFailure e |> Failure
+        with
+        | ex ->
+            ActionException ex |> Failure
+
+    reply(fResult)
+    
+    match fResult with
+    | Success (acc_state', acc_deps') ->
+        if (acc_state' <> acc_state) then
+            let full_state = acc_state, acc_deps
+            let full_state' = acc_state', acc_deps'
+            fire_state_changed ((full_state, full_state'))
+        (acc_state', acc_deps')
+    | Failure x ->
+        fire_error x
+        (acc_state, acc_deps)
+
+let private agent_loop read_msg process_post process_post_and_reply dispose_events (state, deps) =
+    let rec loop (acc_state, acc_deps) = async {
+        let! agent_message = read_msg()
+
+        match agent_message with
+        | Post x -> 
+            return! loop (process_post x (acc_state, acc_deps))
+        | PostAndReply (x, replyChannel) ->
+            return! loop (process_post_and_reply x replyChannel.Reply (acc_state, acc_deps))
+        | Fetch replychannel ->
+            replychannel.Reply((acc_state, acc_deps))
+            return! loop (acc_state, acc_deps)
+        | Die replychannel ->
+            dispose_events()
+
+            replychannel.Reply(())
+            return ()
+    }
+    loop (state, deps)
 let internal _create (state, deps) f =
     let state_changed = new Subject<('state*'deps) * ('state*'deps)>()
     let dispose_state_changed = lazy (state_changed.OnCompleted())
@@ -46,69 +109,19 @@ let internal _create (state, deps) f =
         (stopped :> IDisposable).Dispose()
     )
 
-    let process_post x (acc_state, acc_deps) = 
-        let fResult = 
-            try
-                f x (acc_state, acc_deps)
-                |> Result.mapFailure ActionFailure
-            with ex ->
-                ActionException ex |> Failure 
+    let fire_error = fire_event errored
+    let fire_state_changed = fire_event state_changed
 
-        match fResult with
-        | Success (acc_state', acc_deps') ->
-            if (acc_state' <> acc_state) then
-                let full_state = acc_state, acc_deps
-                let full_state' = acc_state', acc_deps'
-                fire_event state_changed ((full_state, full_state'))
-            (acc_state', acc_deps')
-        | Failure x ->
-            fire_event errored x
-            (acc_state, acc_deps)
+    let dispose_events () = 
+        dispose_stopped.Force()
+        dispose_errored.Force()
+        dispose_state_changed.Force()
 
-    let process_post_and_reply x (replyChannel: AsyncReplyChannel<Result<'state*'deps, ActionError<'e>>>) (acc_state, acc_deps) =
-        let fResult =          
-            try
-                match f x (acc_state, acc_deps) with
-                | Success x -> Success x
-                | Failure e -> ActionFailure e |> Failure
-            with
-            | ex ->
-                ActionException ex |> Failure
-
-        replyChannel.Reply(fResult)
-        
-        match fResult with
-        | Success (acc_state', acc_deps') ->
-            if (acc_state' <> acc_state) then
-                let full_state = acc_state, acc_deps
-                let full_state' = acc_state', acc_deps'
-                fire_event state_changed ((full_state, full_state'))
-            (acc_state', acc_deps')
-        | Failure x ->
-            fire_event errored x
-            (acc_state, acc_deps)
+    let process_post' = process_post fire_error fire_state_changed f
+    let process_post_and_reply' = process_post_and_reply fire_error fire_state_changed f
 
     let agent = MailboxProcessor.Start(fun inbox -> 
-        let rec loop (acc_state, acc_deps) = async {
-            let! agent_message = inbox.Receive()
-
-            match agent_message with
-            | Post x -> 
-                return! loop (process_post x (acc_state, acc_deps))
-            | PostAndReply (x, replyChannel) ->
-                return! loop (process_post_and_reply x replyChannel (acc_state, acc_deps))
-            | Fetch replychannel ->
-                replychannel.Reply((acc_state, acc_deps))
-                return! loop (acc_state, acc_deps)
-            | Die replychannel ->
-                dispose_stopped.Force()
-                dispose_errored.Force()
-                dispose_state_changed.Force()
-
-                replychannel.Reply(())
-                return ()
-        }
-        loop (state, deps)
+        agent_loop inbox.Receive process_post' process_post_and_reply' dispose_events (state, deps)
     )
 
     let post = Post >> agent.Post
@@ -151,8 +164,8 @@ let internal _create (state, deps) f =
         errored = Observable.asObservable errored
     }
 
-let loop full_state f cb =
-    let _agent, stop, agent = _create full_state f  
+let loop initial_full_state process_function callback =
+    let _agent, stop, agent = _create initial_full_state process_function
     
     let disposable = {
         new System.IDisposable with 
@@ -161,4 +174,4 @@ let loop full_state f cb =
                 (_agent :> System.IDisposable).Dispose()
         } 
 
-    using disposable (fun _ -> cb agent)        
+    using disposable (fun _ -> callback agent)        

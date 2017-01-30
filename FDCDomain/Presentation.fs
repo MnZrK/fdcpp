@@ -19,6 +19,9 @@ type Dependencies = {
 type Agent = AgentWithComplexState.T<AgentAction, State*Dependencies option, (ActionError*AgentAction*State)>
 
 // presentation functions
+
+// it is fine for parsing function to be long
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "SourceLength", CheckId = "MaxLinesInFunction")>] 
 let DCNstring_to_DcppMessage input =
     Result.success_workflow_with_string_failures {
         match input with
@@ -123,6 +126,8 @@ let DCNstring_to_DcppMessage input =
     }
     |> Result.mapFailure (fun e -> e, input)
 
+// it is fine for parsing function to be long
+[<System.Diagnostics.CodeAnalysis.SuppressMessage(Category = "SourceLength", CheckId = "MaxLinesInFunction")>] 
 let DcppMessage_to_bytes dcpp_message =
     match dcpp_message with
     | DcppSendMessage.Search s_msg ->
