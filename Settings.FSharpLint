@@ -9,6 +9,9 @@
                 <RecordFieldNamesMustBePascalCase>
                     <Enabled>False</Enabled>
                 </RecordFieldNamesMustBePascalCase>
+                <NonPublicValuesCamelCase>
+                    <Enabled>False</Enabled>
+                </NonPublicValuesCamelCase>                
             </Rules>
         </NameConventions>
         <Typography>
